@@ -142,8 +142,18 @@
             <button id="add-ramp">坂を追加</button>
             <button id="add-box">箱を追加</button>
             <button id="add-seesaw">シーソーを追加</button>
+            <button id="add-plank">板を追加</button>
+            <button id="add-guardrail">ガードレールを追加</button>
             <button id="clear-all" class="delete">すべてクリア</button>
             <button id="reset-ball" class="secondary">ビー玉をリセット</button>
+            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ddd;">
+            <button id="save-state" class="secondary">状態を保存</button>
+            <button id="load-state" class="secondary">状態を読み込み</button>
+            <button id="export-json" class="secondary">JSONにエクスポート</button>
+            <label for="import-json" style="display: block; width: 100%;">
+                <input type="file" id="import-json" accept=".json" style="display: none;">
+                <button id="import-json-btn" class="secondary" style="width: 100%;">JSONからインポート</button>
+            </label>
         </div>
         <div class="speed-control">
             <label>ビー玉の数</label>
