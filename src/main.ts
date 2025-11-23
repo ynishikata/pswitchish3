@@ -404,7 +404,7 @@ world.addBody(groundBody);
 interface GameObject {
   mesh: THREE.Mesh;
   body: CANNON.Body;
-  type: 'ball' | 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'penguin' | 'cow' | 'stairs' | 'train';
+  type: 'ball' | 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'penguin' | 'cow' | 'stairs' | 'train' | 'trampoline' | 'goal';
   orbitAngle?: number; // 新幹線の周回角度
   orbitSpeed?: number; // 新幹線の周回速度
   pivotBody?: CANNON.Body; // シーソーの支点（オプション）
@@ -420,10 +420,19 @@ interface GameObject {
   isReturning?: boolean; // ガードレールが元の位置に戻っているか
   stairsBodies?: CANNON.Body[]; // 階段の各ステップの物理ボディ（階段専用）
   stairsGroup?: THREE.Group; // 階段のグループ（階段専用）
+  hasTriggered?: boolean; // ゴールが既にトリガーされたか（花火を一度だけ上げるため）
 }
 
 const gameObjects: GameObject[] = [];
 let selectedObject: GameObject | null = null;
+// 花火のパーティクルを管理する配列
+const fireworksParticles: THREE.Mesh[] = [];
+// 打ち上げ中の花火（爆発前）を管理する配列
+const launchingFireworks: Array<{
+  particle: THREE.Mesh;
+  targetHeight: number;
+  explosionColor: number;
+}> = [];
 let isDragging = false;
 let dragPlane: THREE.Plane | null = null;
 let dragOffset = new THREE.Vector3();
@@ -1020,6 +1029,310 @@ function createGuardRail(
     initialQuaternion: initialQuaternion.clone(),
     isReturning: false
   };
+}
+
+// トランポリンの作成
+function createTrampoline(position: { x: number; y: number; z: number }): GameObject {
+  const radius = 1.5;
+  const thickness = 0.1;
+  
+  // トランポリンのマット（円形）
+  const matGeometry = new THREE.CylinderGeometry(radius, radius, thickness, 32);
+  const matMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xff69b4, // ピンク
+    metalness: 0.1,
+    roughness: 0.7
+  });
+  const matMesh = new THREE.Mesh(matGeometry, matMaterial);
+  matMesh.position.set(position.x, position.y + thickness / 2, position.z);
+  matMesh.rotation.x = Math.PI / 2; // 横向きにする
+  matMesh.castShadow = true;
+  matMesh.receiveShadow = true;
+  
+  // トランポリンの枠（金属のリング）
+  const frameGeometry = new THREE.TorusGeometry(radius + 0.1, 0.05, 8, 32);
+  const frameMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x888888, // グレー
+    metalness: 0.8,
+    roughness: 0.2
+  });
+  const frameMesh = new THREE.Mesh(frameGeometry, frameMaterial);
+  frameMesh.position.set(position.x, position.y + 0.15, position.z);
+  frameMesh.rotation.x = Math.PI / 2;
+  frameMesh.castShadow = true;
+  
+  // グループにまとめる
+  const group = new THREE.Group();
+  group.add(matMesh);
+  group.add(frameMesh);
+  scene.add(group);
+  
+  // 物理ボディ（高反発のマテリアル）
+  const shape = new CANNON.Cylinder(radius, radius, thickness, 32);
+  const body = new CANNON.Body({ mass: 0 }); // 固定
+  body.addShape(shape);
+  body.position.set(position.x, position.y + thickness / 2, position.z);
+  body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.PI / 2);
+  // 高反発のマテリアル
+  const trampolineMaterial = new CANNON.Material({ 
+    friction: 0.1, 
+    restitution: 1.5 // 非常に高反発（1.5で上向きに加速）
+  });
+  body.material = trampolineMaterial;
+  world.addBody(body);
+  
+  return { 
+    mesh: group as any, 
+    body, 
+    type: 'trampoline'
+  };
+}
+
+// ゴールの作成
+function createGoal(position: { x: number; y: number; z: number }): GameObject {
+  const width = 2;
+  const height = 1;
+  const depth = 2;
+  const wallThickness = 0.1;
+  
+  // ゴールのマテリアル（金色）
+  const goalMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xffd700, // 金色
+    metalness: 0.8,
+    roughness: 0.2,
+    emissive: 0xffd700,
+    emissiveIntensity: 0.3
+  });
+  
+  const group = new THREE.Group();
+  
+  // 底面
+  const bottom = new THREE.Mesh(
+    new THREE.BoxGeometry(width, wallThickness, depth),
+    goalMaterial
+  );
+  bottom.position.set(0, wallThickness / 2, 0);
+  group.add(bottom);
+  
+  // 前面の壁
+  const frontWall = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, wallThickness),
+    goalMaterial
+  );
+  frontWall.position.set(0, height / 2, depth / 2);
+  group.add(frontWall);
+  
+  // 後面の壁
+  const backWall = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, wallThickness),
+    goalMaterial
+  );
+  backWall.position.set(0, height / 2, -depth / 2);
+  group.add(backWall);
+  
+  // 左側の壁
+  const leftWall = new THREE.Mesh(
+    new THREE.BoxGeometry(wallThickness, height, depth),
+    goalMaterial
+  );
+  leftWall.position.set(-width / 2, height / 2, 0);
+  group.add(leftWall);
+  
+  // 右側の壁
+  const rightWall = new THREE.Mesh(
+    new THREE.BoxGeometry(wallThickness, height, depth),
+    goalMaterial
+  );
+  rightWall.position.set(width / 2, height / 2, 0);
+  group.add(rightWall);
+  
+  // 旗のポール（細い円柱）
+  const poleHeight = 2;
+  const poleRadius = 0.03;
+  const poleGeometry = new THREE.CylinderGeometry(poleRadius, poleRadius, poleHeight, 16);
+  const poleMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x888888, // グレー
+    metalness: 0.5,
+    roughness: 0.5
+  });
+  const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+  pole.position.set(0, height + poleHeight / 2, 0);
+  group.add(pole);
+  
+  // 旗の布（平面）
+  const flagWidth = 0.8;
+  const flagHeight = 0.6;
+  const flagGeometry = new THREE.PlaneGeometry(flagWidth, flagHeight);
+  const flagMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xff0000, // 赤
+    side: THREE.DoubleSide,
+    emissive: 0xff0000,
+    emissiveIntensity: 0.3
+  });
+  const flag = new THREE.Mesh(flagGeometry, flagMaterial);
+  // 旗をポールの上に配置（少し風になびく感じで角度をつける）
+  flag.position.set(flagWidth / 2 + 0.05, height + poleHeight - flagHeight / 2, 0);
+  flag.rotation.y = -Math.PI / 6; // 少し角度をつける
+  group.add(flag);
+  
+  group.position.set(position.x, position.y, position.z);
+  group.castShadow = true;
+  group.receiveShadow = true;
+  scene.add(group);
+  
+  // 物理ボディ（検出用の透明な箱）
+  const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
+  const body = new CANNON.Body({ mass: 0 }); // 固定
+  body.addShape(shape);
+  body.position.set(position.x, position.y + height / 2, position.z);
+  world.addBody(body);
+  
+  return { 
+    mesh: group as any, 
+    body, 
+    type: 'goal',
+    hasTriggered: false
+  };
+}
+
+// 花火エフェクトの作成（打ち上げ花火風）
+function createFireworks(position: { x: number; y: number; z: number }): void {
+  const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+  const explosionColor = colors[Math.floor(Math.random() * colors.length)];
+  
+  // 打ち上げパーティクル（上に打ち上がる）
+  const launchGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+  const launchMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xffffff, // 白い打ち上げ
+    emissive: 0xffffff,
+    emissiveIntensity: 2.0,
+    transparent: true,
+    opacity: 1.0
+  });
+  const launchParticle = new THREE.Mesh(launchGeometry, launchMaterial);
+  
+  // 打ち上げ速度（上方向に速く、でも見えるように）
+  const launchSpeed = 8; // 速度を下げて見やすく
+  launchParticle.position.set(position.x, position.y, position.z);
+  launchParticle.userData.velocity = new THREE.Vector3(0, launchSpeed, 0);
+  launchParticle.userData.gravity = -0.2;
+  
+  // 爆発する高さ（ランダムに8-15m、高めに）
+  const targetHeight = position.y + Math.random() * 7 + 8;
+  
+  scene.add(launchParticle);
+  launchingFireworks.push({
+    particle: launchParticle,
+    targetHeight: targetHeight,
+    explosionColor: explosionColor
+  });
+}
+
+// 花火の爆発エフェクト（放射状に広がる）
+function explodeFireworks(position: { x: number; y: number; z: number }, color: number): void {
+  const numParticles = 300; // 爆発時のパーティクル数を増やす
+  
+  for (let i = 0; i < numParticles; i++) {
+    const particleGeometry = new THREE.SphereGeometry(0.15, 8, 8); // サイズを大きく
+    const particleMaterial = new THREE.MeshStandardMaterial({ 
+      color: color,
+      emissive: color,
+      emissiveIntensity: 1.5,
+      transparent: true,
+      opacity: 1.0
+    });
+    const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+    
+    // 放射状に広がる方向を計算
+    const angle = Math.random() * Math.PI * 2; // 水平方向の角度
+    const elevation = (Math.random() - 0.5) * Math.PI; // 上下方向の角度（-90度から90度）
+    const speed = Math.random() * 12 + 8; // 爆発速度（少し調整）
+    
+    particle.position.set(position.x, position.y, position.z);
+    particle.userData.velocity = new THREE.Vector3(
+      Math.cos(angle) * Math.cos(elevation) * speed,
+      Math.sin(elevation) * speed,
+      Math.sin(angle) * Math.cos(elevation) * speed
+    );
+    particle.userData.life = 400; // 約6.7秒間（400フレーム）
+    particle.userData.maxLife = 400;
+    particle.userData.gravity = -0.2; // 重力を少し弱く
+    
+    scene.add(particle);
+    fireworksParticles.push(particle);
+  }
+}
+
+// ゴールメッセージの表示
+function showGoalMessage(): void {
+  // 既存のメッセージがあれば削除
+  const existingMessage = document.getElementById('goal-message');
+  if (existingMessage) {
+    existingMessage.remove();
+  }
+  
+  // メッセージ要素を作成
+  const message = document.createElement('div');
+  message.id = 'goal-message';
+  message.textContent = 'ゴール！おめでとう！';
+  message.style.position = 'fixed';
+  message.style.top = '50%';
+  message.style.left = '50%';
+  message.style.transform = 'translate(-50%, -50%)';
+  message.style.fontSize = '72px';
+  message.style.fontWeight = 'bold';
+  message.style.color = '#ffd700';
+  message.style.textShadow = '0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000';
+  message.style.zIndex = '10000';
+  message.style.pointerEvents = 'none';
+  message.style.fontFamily = 'Arial, sans-serif';
+  message.style.animation = 'goalMessagePop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+  message.style.opacity = '0';
+  
+  // アニメーションスタイルを追加
+  if (!document.getElementById('goal-message-style')) {
+    const style = document.createElement('style');
+    style.id = 'goal-message-style';
+    style.textContent = `
+      @keyframes goalMessagePop {
+        0% { 
+          transform: translate(-50%, -50%) scale(0) rotate(-180deg); 
+          opacity: 0; 
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.2) rotate(0deg);
+          opacity: 1;
+        }
+        100% { 
+          transform: translate(-50%, -50%) scale(1) rotate(0deg); 
+          opacity: 1; 
+        }
+      }
+      @keyframes goalMessageFade {
+        0% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  
+  document.body.appendChild(message);
+  
+  // アニメーション開始
+  setTimeout(() => {
+    message.style.opacity = '1';
+  }, 10);
+  
+  // 3秒後にフェードアウト
+  setTimeout(() => {
+    message.style.animation = 'goalMessageFade 1s ease-out';
+    message.style.opacity = '0';
+    setTimeout(() => {
+      if (message.parentNode) {
+        message.parentNode.removeChild(message);
+      }
+    }, 1000);
+  }, 3000);
 }
 
 // ペンギンの作成
@@ -1627,7 +1940,7 @@ function removeObject(obj: GameObject) {
 
 // オブジェクト間の衝突判定（重なりチェック）
 function checkCollision(
-  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'stairs',
+  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'stairs' | 'trampoline' | 'goal',
   position: { x: number; y: number; z: number },
   excludeObject?: GameObject
 ): boolean {
@@ -1664,6 +1977,12 @@ function checkCollision(
       break;
     case 'stairs':
       bounds = { width: 1.5, height: 0.3, depth: 0.5 }; // 階段のステップのサイズ
+      break;
+    case 'trampoline':
+      bounds = { width: 3, height: 0.1, depth: 3 }; // トランポリンの半径1.5なので直径3
+      break;
+    case 'goal':
+      bounds = { width: 2, height: 1, depth: 2 }; // ゴールのサイズ
       break;
   }
   
@@ -1710,6 +2029,12 @@ function checkCollision(
       case 'guardrail':
         existingBounds = { width: 3, depth: 0.1 }; // ガードレールの長さと厚さ
         break;
+      case 'trampoline':
+        existingBounds = { width: 3, depth: 3 }; // トランポリンの半径1.5なので直径3
+        break;
+      case 'goal':
+        existingBounds = { width: 2, depth: 2 }; // ゴールのサイズ
+        break;
     }
     
     const existingHalfWidth = existingBounds.width / 2 + buffer;
@@ -1732,7 +2057,7 @@ function checkCollision(
 
 // 空いている位置を探す
 function findFreePosition(
-  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'plank' | 'guardrail' | 'stairs' | 'shrine' | 'mountain',
+  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'plank' | 'guardrail' | 'stairs' | 'shrine' | 'mountain' | 'trampoline' | 'goal',
   centerX: number = 0,
   centerZ: number = 0,
   maxAttempts: number = 50,
@@ -2018,6 +2343,22 @@ document.getElementById('add-stairs')?.addEventListener('click', () => {
     0.8  // ステップの奥行き
   );
   gameObjects.push(stairs);
+});
+
+document.getElementById('add-trampoline')?.addEventListener('click', () => {
+  const pos = findFreePosition('trampoline', 0, 0, 50, 10);
+  if (pos) {
+    const trampoline = createTrampoline({ x: pos.x, y: 0, z: pos.z });
+    gameObjects.push(trampoline);
+  }
+});
+
+document.getElementById('add-goal')?.addEventListener('click', () => {
+  const pos = findFreePosition('goal', 0, 0, 50, 10);
+  if (pos) {
+    const goal = createGoal({ x: pos.x, y: 0, z: pos.z });
+    gameObjects.push(goal);
+  }
 });
 
 // ビー玉の数の変数
@@ -2502,6 +2843,8 @@ interface SavedObject {
     // 山の場合
     mountainHeight?: number;
     mountainRadius?: number;
+    // 新幹線の場合
+    orbitAngle?: number;
   };
 }
 
@@ -2559,6 +2902,11 @@ function serializeGameState(): SavedGameState {
           mountainRadius: params.radius || 3
         };
       }
+    } else if (obj.type === 'train') {
+      // 新幹線のorbitAngleを保存
+      savedObj.params = {
+        orbitAngle: obj.orbitAngle || 0
+      };
     }
     
     return savedObj;
@@ -2648,6 +2996,20 @@ function deserializeGameState(savedState: SavedGameState) {
       case 'cow':
         obj = createCow({ x: pos.x, y: pos.y, z: pos.z });
         break;
+      case 'trampoline':
+        obj = createTrampoline({ x: pos.x, y: pos.y, z: pos.z });
+        break;
+      case 'goal':
+        obj = createGoal({ x: pos.x, y: pos.y, z: pos.z });
+        break;
+      case 'train':
+        // 新幹線の場合は初期角度も必要（保存されたorbitAngleまたは回転から計算）
+        const trainAngle = savedObj.params?.orbitAngle !== undefined 
+          ? savedObj.params.orbitAngle 
+          : Math.atan2(2 * (savedObj.rotation.w * savedObj.rotation.y + savedObj.rotation.x * savedObj.rotation.z), 
+                       1 - 2 * (savedObj.rotation.y * savedObj.rotation.y + savedObj.rotation.z * savedObj.rotation.z));
+        obj = createTrain({ x: pos.x, y: pos.y, z: pos.z }, trainAngle);
+        break;
     }
     
     if (obj) {
@@ -2666,6 +3028,11 @@ function deserializeGameState(savedState: SavedGameState) {
         savedObj.rotation.z,
         savedObj.rotation.w
       );
+      
+      // 新幹線の場合はorbitAngleも復元
+      if (obj.type === 'train' && savedObj.params?.orbitAngle !== undefined) {
+        obj.orbitAngle = savedObj.params.orbitAngle;
+      }
       
       gameObjects.push(obj);
     }
@@ -2690,6 +3057,18 @@ function deserializeGameState(savedState: SavedGameState) {
     ballCount = savedState.ballCount;
     const ballCountInput = document.getElementById('ball-count') as HTMLInputElement;
     if (ballCountInput) ballCountInput.value = ballCount.toString();
+  }
+  
+  // 新幹線がない場合は追加
+  const hasTrain = gameObjects.some(obj => obj.type === 'train');
+  if (!hasTrain) {
+    const trainY = 0.8;
+    const railwayRadius = SIZES.GROUND_RADIUS + 0.5;
+    const initialAngle = Math.PI / 4;
+    const initialTrainX = railwayRadius * Math.cos(initialAngle - Math.PI / 2);
+    const initialTrainZ = railwayRadius * Math.sin(initialAngle - Math.PI / 2);
+    const train = createTrain({ x: initialTrainX, y: trainY, z: initialTrainZ }, initialAngle);
+    gameObjects.push(train);
   }
 }
 
@@ -2991,6 +3370,91 @@ function animate() {
     }
   });
   
+  // ゴール判定（ビー玉がゴールに入ったら花火を上げる）
+  gameObjects.forEach(goal => {
+    if (goal.type === 'goal' && !goal.hasTriggered) {
+      gameObjects.forEach(ball => {
+        if (ball.type === 'ball') {
+          const ballPos = ball.body.position;
+          const goalPos = goal.body.position;
+          
+          // ゴールの範囲内かチェック（幅2、高さ1、奥行き2）
+          const goalWidth = 2;
+          const goalHeight = 1;
+          const goalDepth = 2;
+          
+          const inX = Math.abs(ballPos.x - goalPos.x) < goalWidth / 2;
+          const inY = ballPos.y > goalPos.y && ballPos.y < goalPos.y + goalHeight;
+          const inZ = Math.abs(ballPos.z - goalPos.z) < goalDepth / 2;
+          
+          if (inX && inY && inZ) {
+            // ゴールに入った！
+            goal.hasTriggered = true;
+            createFireworks({ x: goalPos.x, y: goalPos.y + goalHeight / 2, z: goalPos.z });
+            showGoalMessage();
+          }
+        }
+      });
+    }
+  });
+  
+  // 打ち上げ中の花火を更新（爆発前）
+  for (let i = launchingFireworks.length - 1; i >= 0; i--) {
+    const launching = launchingFireworks[i];
+    const particle = launching.particle;
+    
+    // 位置を更新
+    const vel = particle.userData.velocity as THREE.Vector3;
+    particle.position.add(vel);
+    vel.y += particle.userData.gravity;
+    
+    // 目標高度に達したら爆発
+    if (particle.position.y >= launching.targetHeight) {
+      // 爆発エフェクトを生成
+      explodeFireworks(
+        { x: particle.position.x, y: particle.position.y, z: particle.position.z },
+        launching.explosionColor
+      );
+      
+      // 打ち上げパーティクルを削除
+      scene.remove(particle);
+      particle.geometry.dispose();
+      (particle.material as THREE.MeshStandardMaterial).dispose();
+      launchingFireworks.splice(i, 1);
+    }
+  }
+  
+  // 花火のパーティクルを更新（爆発後のパーティクル）
+  for (let i = fireworksParticles.length - 1; i >= 0; i--) {
+    const particle = fireworksParticles[i];
+    if (particle.userData.life > 0) {
+      // 位置を更新
+      const vel = particle.userData.velocity as THREE.Vector3;
+      particle.position.add(vel);
+      vel.y += particle.userData.gravity;
+      particle.userData.life--;
+      
+      // フェードアウト（最後の30%の期間でフェードアウト開始）
+      const lifeRatio = particle.userData.life / particle.userData.maxLife;
+      let opacity = 1.0;
+      if (lifeRatio < 0.3) {
+        // 最後の30%の期間でフェードアウト
+        opacity = lifeRatio / 0.3;
+      }
+      (particle.material as THREE.MeshStandardMaterial).opacity = opacity;
+      
+      // サイズも少し小さくする（フェードアウトと同時に）
+      const scale = 0.3 + opacity * 0.7;
+      particle.scale.set(scale, scale, scale);
+    } else {
+      // パーティクルを削除
+      scene.remove(particle);
+      particle.geometry.dispose();
+      (particle.material as THREE.MeshStandardMaterial).dispose();
+      fireworksParticles.splice(i, 1);
+    }
+  }
+  
   // ガードレールとドミノの自動復帰処理
   gameObjects.forEach(obj => {
     if ((obj.type === 'guardrail' || obj.type === 'domino') && obj.initialPosition && obj.initialQuaternion) {
@@ -3044,7 +3508,14 @@ function animate() {
         const group = obj.mesh;
         // グループ全体の位置と角度を更新
         group.position.set(headPos.x, trainY, headPos.z);
-        group.rotation.y = headPos.angle;
+        group.rotation.set(0, headPos.angle, 0); // X, Z軸の回転は0に固定
+        
+        // グループ内の車両の回転もリセット（自転を防ぐ）
+        group.children.forEach(child => {
+          if (child instanceof THREE.Group) {
+            child.rotation.set(0, 0, 0); // 車両自体の回転を0に
+          }
+        });
       }
       
       // 物理ボディの位置と角度を更新
@@ -3057,8 +3528,14 @@ function animate() {
   gameObjects.forEach(obj => {
     // 移動中でない場合のみ同期
     if (!isDragging || obj !== selectedObject) {
-      obj.mesh.position.copy(obj.body.position as any);
-      obj.mesh.quaternion.copy(obj.body.quaternion as any);
+      // 新幹線の場合は位置のみ同期（回転はアニメーション処理で設定済み）
+      if (obj.type === 'train') {
+        obj.mesh.position.copy(obj.body.position as any);
+        // 回転は同期しない（アニメーション処理で既に設定済み）
+      } else {
+        obj.mesh.position.copy(obj.body.position as any);
+        obj.mesh.quaternion.copy(obj.body.quaternion as any);
+      }
     }
   });
   
@@ -3082,6 +3559,7 @@ if (savedData) {
     // 保存されたデータにペンギンと牛が含まれているか確認
     const hasPenguin = gameState.objects.some(obj => obj.type === 'penguin');
     const hasCow = gameState.objects.some(obj => obj.type === 'cow');
+    const hasTrain = gameState.objects.some(obj => obj.type === 'train');
     
     // 保存されたデータを読み込む
     deserializeGameState(gameState);
@@ -3132,6 +3610,17 @@ if (savedData) {
         const cow = createCow({ x: cowX, y: 0.5, z: cowZ });
         gameObjects.push(cow);
       }
+    }
+    
+    // 新幹線がない場合は追加
+    if (!hasTrain) {
+      const trainY = 0.8;
+      const railwayRadius = SIZES.GROUND_RADIUS + 0.5;
+      const initialAngle = Math.PI / 4;
+      const initialTrainX = railwayRadius * Math.cos(initialAngle - Math.PI / 2);
+      const initialTrainZ = railwayRadius * Math.sin(initialAngle - Math.PI / 2);
+      const train = createTrain({ x: initialTrainX, y: trainY, z: initialTrainZ }, initialAngle);
+      gameObjects.push(train);
     }
   } catch (error) {
     console.error('保存データの読み込みエラー:', error);
