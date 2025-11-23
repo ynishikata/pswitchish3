@@ -2,10 +2,96 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// シーン、カメラ、レンダラーのセットアップ
+// ============================================================================
+// 定数定義
+// ============================================================================
+
+// 色定義
+const COLORS = {
+  SKY: 0x87ceeb,
+  GROUND: 0x8b7355,
+  SUN: 0xffeb3b,
+  CLOUD: 0xffffff,
+  GRASS: 0x228b22,
+  GRASS_BLADE: 0x32cd32,
+  BALL: 0x00ff00,
+  DOMINO: 0xff6b6b,
+  RAMP: 0x4ecdc4,
+  BOX: 0xffd93d,
+  SEESAW: 0x9b59b6,
+  MOUNTAIN: 0x6b5b52,
+  SHRINE: 0xd4a574,
+  SHRINE_ROOF: 0x8b4513,
+  ROAD: 0x4a4a4a,
+  PLANK: 0x8b6914,
+  GUARDRAIL: 0xc0c0c0,
+  HIGHLIGHT: 0xffff00,
+  RAIL: 0x404040, // レール（濃いグレー）
+  SLEEPER: 0x654321, // 枕木（茶色）
+} as const;
+
+// 物理パラメータ
+const PHYSICS = {
+  GRAVITY: -9.82,
+  SOLVER_ITERATIONS: 10,
+  SOLVER_TOLERANCE: 0.1,
+  GROUND_FRICTION: 0.3,
+  GROUND_RESTITUTION: 0.5,
+} as const;
+
+// オブジェクトサイズ
+const SIZES = {
+  BALL_RADIUS: 0.2,
+  DOMINO: { width: 0.1, height: 0.8, depth: 0.3 },
+  GROUND_RADIUS: 25, // 地面の半径（円形）
+  GROUND_BOUNDARY: 25, // 境界（半径と同じ）
+  AXES_HELPER: 5,
+} as const;
+
+// 太陽設定
+const SUN = {
+  DISTANCE: 40,
+  ANGLE: Math.PI / 4, // 45度
+  RADIUS: 2,
+  GLOW_RADIUS: 2.5,
+  NUM_RAYS: 16,
+  RAY_LENGTH: 4,
+  RAY_THICKNESS: 0.15,
+  RAY_DISTANCE: 3,
+} as const;
+
+// 復帰処理パラメータ
+const RETURN_CONFIG = {
+  LERP_FACTOR: 0.02,
+  POSITION_THRESHOLD: 0.1, // 10cm
+  QUATERNION_THRESHOLD: 0.9,
+  FINAL_POSITION_THRESHOLD: 0.05, // 5cm
+  FINAL_QUATERNION_THRESHOLD: 0.98,
+  VELOCITY_DAMPING: 0.9,
+} as const;
+
+// 動物パトロール設定
+const ANIMAL_CONFIG = {
+  PENGUIN_SPEED: 1.5,
+  COW_SPEED: 1.0,
+  PATROL_TIMER_MIN: 2,
+  PATROL_TIMER_MAX: 5,
+  BOUNDARY_MARGIN: 2,
+} as const;
+
+// 牧草ゾーン設定
+const PASTURE = {
+  CENTER_X: 10,
+  CENTER_Z: 10,
+  WIDTH: 10,
+  DEPTH: 10,
+  NUM_GRASS_BLADES: 50,
+} as const;
+
+// ============================================================================
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 0, 200);
+scene.background = new THREE.Color(COLORS.SKY);
+scene.fog = new THREE.Fog(COLORS.SKY, 0, 200);
 
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -28,17 +114,17 @@ controls.dampingFactor = 0.05;
 controls.target.set(0, 0, 0);
 
 // XYZ軸を表示（座標軸ヘルパー）
-const axesHelper = new THREE.AxesHelper(5); // 5ユニットの長さ
+const axesHelper = new THREE.AxesHelper(SIZES.AXES_HELPER);
 scene.add(axesHelper);
 
 // 物理ワールドのセットアップ
 const world = new CANNON.World({
-  gravity: new CANNON.Vec3(0, -9.82, 0),
+  gravity: new CANNON.Vec3(0, PHYSICS.GRAVITY, 0),
 });
 world.broadphase = new CANNON.NaiveBroadphase();
 const solver = new CANNON.GSSolver();
-solver.iterations = 10;
-solver.tolerance = 0.1;
+solver.iterations = PHYSICS.SOLVER_ITERATIONS;
+solver.tolerance = PHYSICS.SOLVER_TOLERANCE;
 world.solver = solver;
 
 // ライトの追加
@@ -59,18 +145,15 @@ directionalLight.shadow.camera.bottom = -20;
 scene.add(directionalLight);
 
 // 太陽の作成（斜め45度の位置に配置）
-const sunDistance = 40; // 太陽までの距離
-const sunAngle = Math.PI / 4; // 45度（ラジアン）
-// 斜め45度の位置: X方向とY方向に同じ距離で配置
-const sunX = sunDistance * Math.cos(sunAngle);
-const sunY = sunDistance * Math.sin(sunAngle);
-const sunZ = 0; // Z方向は0
+const sunX = SUN.DISTANCE * Math.cos(SUN.ANGLE);
+const sunY = SUN.DISTANCE * Math.sin(SUN.ANGLE);
+const sunZ = 0;
 
 // 太陽の本体
-const sunGeometry = new THREE.SphereGeometry(2, 32, 32);
+const sunGeometry = new THREE.SphereGeometry(SUN.RADIUS, 32, 32);
 const sunMaterial = new THREE.MeshStandardMaterial({ 
-  color: 0xffeb3b,
-  emissive: 0xffeb3b,
+  color: COLORS.SUN,
+  emissive: COLORS.SUN,
   emissiveIntensity: 1.5,
   metalness: 0.1,
   roughness: 0.9
@@ -82,10 +165,10 @@ sun.receiveShadow = false;
 scene.add(sun);
 
 // 太陽の周りの光の輪（グローエフェクト）
-const glowGeometry = new THREE.SphereGeometry(2.5, 32, 32);
+const glowGeometry = new THREE.SphereGeometry(SUN.GLOW_RADIUS, 32, 32);
 const glowMaterial = new THREE.MeshStandardMaterial({
-  color: 0xffeb3b,
-  emissive: 0xffeb3b,
+  color: COLORS.SUN,
+  emissive: COLORS.SUN,
   emissiveIntensity: 0.8,
   transparent: true,
   opacity: 0.6
@@ -98,33 +181,28 @@ scene.add(sunGlow);
 
 // 太陽光線の表現（放射状の光線）
 const sunRaysGroup = new THREE.Group();
-const numRays = 16; // 光線の数
-const rayLength = 4;
-const rayThickness = 0.15;
-
-for (let i = 0; i < numRays; i++) {
-  const angle = (i / numRays) * Math.PI * 2;
-  const rayGeometry = new THREE.BoxGeometry(rayThickness, rayLength, rayThickness);
+for (let i = 0; i < SUN.NUM_RAYS; i++) {
+  const angle = (i / SUN.NUM_RAYS) * Math.PI * 2;
+  const rayGeometry = new THREE.BoxGeometry(SUN.RAY_THICKNESS, SUN.RAY_LENGTH, SUN.RAY_THICKNESS);
   const rayMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffeb3b,
+    color: COLORS.SUN,
     transparent: true,
     opacity: 0.6
   });
   const ray = new THREE.Mesh(rayGeometry, rayMaterial);
   
   // 太陽の周りに放射状に配置
-  const rayDistance = 3; // 太陽からの距離
   ray.position.set(
-    sunX + Math.cos(angle) * rayDistance,
-    sunY + Math.sin(angle) * rayDistance,
+    sunX + Math.cos(angle) * SUN.RAY_DISTANCE,
+    sunY + Math.sin(angle) * SUN.RAY_DISTANCE,
     sunZ
   );
   
   // 太陽の中心から外側に向かう方向に回転
   const rayDirection = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
   ray.lookAt(
-    sunX + rayDirection.x * (rayDistance + rayLength / 2),
-    sunY + rayDirection.y * (rayDistance + rayLength / 2),
+    sunX + rayDirection.x * (SUN.RAY_DISTANCE + SUN.RAY_LENGTH / 2),
+    sunY + rayDirection.y * (SUN.RAY_DISTANCE + SUN.RAY_LENGTH / 2),
     sunZ
   );
   
@@ -133,46 +211,215 @@ for (let i = 0; i < numRays; i++) {
 scene.add(sunRaysGroup);
 
 // 太陽の光を追加（ポイントライトとして）
-const sunLight = new THREE.PointLight(0xffeb3b, 2.0, 150);
+const sunLight = new THREE.PointLight(COLORS.SUN, 2.0, 150);
 sunLight.position.copy(sun.position);
 sunLight.castShadow = false;
 scene.add(sunLight);
 
 // 太陽光の表現（方向性のあるライト）
-const sunDirectionalLight = new THREE.DirectionalLight(0xffeb3b, 0.5);
+const sunDirectionalLight = new THREE.DirectionalLight(COLORS.SUN, 0.5);
 sunDirectionalLight.position.set(sunX, sunY, sunZ);
 sunDirectionalLight.target.position.set(0, 0, 0); // 原点方向に光を向ける
 sunDirectionalLight.castShadow = false;
 scene.add(sunDirectionalLight);
 scene.add(sunDirectionalLight.target);
 
-// 地面の作成（水平な土台）
-const groundGeometry = new THREE.PlaneGeometry(50, 50);
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x8b7355 });
+// 雲の作成（太陽の近くに配置）
+function createCloud(position: { x: number; y: number; z: number }, size: number = 1): THREE.Group {
+  const cloudGroup = new THREE.Group();
+  
+  // 雲のマテリアル（白、少し透明）
+  const cloudMaterial = new THREE.MeshStandardMaterial({
+    color: COLORS.CLOUD,
+    transparent: true,
+    opacity: 0.8,
+    roughness: 0.9,
+    metalness: 0.0
+  });
+  
+  // 複数の球体を組み合わせて雲の形を作る
+  const cloudParts = [
+    { x: 0, y: 0, z: 0, radius: size * 0.6 },
+    { x: size * 0.5, y: 0, z: 0, radius: size * 0.5 },
+    { x: -size * 0.5, y: 0, z: 0, radius: size * 0.5 },
+    { x: 0, y: size * 0.3, z: 0, radius: size * 0.4 },
+    { x: size * 0.3, y: size * 0.2, z: size * 0.3, radius: size * 0.35 },
+    { x: -size * 0.3, y: size * 0.2, z: -size * 0.3, radius: size * 0.35 }
+  ];
+  
+  cloudParts.forEach(part => {
+    const cloudGeometry = new THREE.SphereGeometry(part.radius, 16, 16);
+    const cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
+    cloudMesh.position.set(part.x, part.y, part.z);
+    cloudMesh.castShadow = false;
+    cloudMesh.receiveShadow = false;
+    cloudGroup.add(cloudMesh);
+  });
+  
+  cloudGroup.position.set(position.x, position.y, position.z);
+  return cloudGroup;
+}
+
+// 太陽の近くに雲を配置（複数の雲を配置）
+const cloudPositions = [
+  { x: sunX + 3, y: sunY + 2, z: sunZ + 2 },  // 太陽の右上
+  { x: sunX - 4, y: sunY + 1, z: sunZ - 3 },  // 太陽の左上
+  { x: sunX + 2, y: sunY - 3, z: sunZ + 4 },  // 太陽の右下
+  { x: sunX - 3, y: sunY - 2, z: sunZ - 2 }   // 太陽の左下
+];
+
+const clouds: THREE.Group[] = [];
+cloudPositions.forEach((pos) => {
+  const cloudSize = 1.5 + Math.random() * 0.5; // 1.5から2.0のサイズ
+  const cloud = createCloud(pos, cloudSize);
+  scene.add(cloud);
+  clouds.push(cloud);
+});
+
+// 線路の作成（地面の周囲に配置）
+function createRailway(radius: number, segmentCount: number = 120): void {
+  const railGroup = new THREE.Group();
+  
+  // レールのサイズ
+  const railWidth = 0.1; // レールの幅
+  const railHeight = 0.15; // レールの高さ
+  const sleeperWidth = 0.2; // 枕木の幅
+  const sleeperHeight = 0.1; // 枕木の高さ
+  const sleeperLength = 1.5; // 枕木の長さ
+  
+  // レールのマテリアル
+  const railMaterial = new THREE.MeshStandardMaterial({ 
+    color: COLORS.RAIL,
+    metalness: 0.8,
+    roughness: 0.2
+  });
+  
+  // 枕木のマテリアル
+  const sleeperMaterial = new THREE.MeshStandardMaterial({ 
+    color: COLORS.SLEEPER,
+    roughness: 0.9
+  });
+  
+  // 円周上に枕木とレールを配置
+  for (let i = 0; i < segmentCount; i++) {
+    const angle = (i / segmentCount) * Math.PI * 2;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    
+    // 枕木を作成
+    const sleeperGeometry = new THREE.BoxGeometry(sleeperLength, sleeperHeight, sleeperWidth);
+    const sleeper = new THREE.Mesh(sleeperGeometry, sleeperMaterial);
+    sleeper.position.set(x, sleeperHeight / 2, z);
+    // 枕木を円周の接線方向に回転
+    sleeper.rotation.y = angle + Math.PI / 2;
+    sleeper.castShadow = true;
+    sleeper.receiveShadow = true;
+    railGroup.add(sleeper);
+    
+    // 左側のレール（中心から見て内側）
+    const railLeftGeometry = new THREE.BoxGeometry(railHeight, railWidth, railWidth);
+    const railLeft = new THREE.Mesh(railLeftGeometry, railMaterial);
+    const railOffset = sleeperLength / 2 - 0.3; // レールのオフセット
+    const leftX = Math.cos(angle) * radius - Math.sin(angle) * railOffset;
+    const leftZ = Math.sin(angle) * radius + Math.cos(angle) * railOffset;
+    railLeft.position.set(leftX, railHeight / 2 + sleeperHeight, leftZ);
+    railLeft.rotation.y = angle + Math.PI / 2;
+    railLeft.castShadow = true;
+    railLeft.receiveShadow = true;
+    railGroup.add(railLeft);
+    
+    // 右側のレール（中心から見て外側）
+    const railRightGeometry = new THREE.BoxGeometry(railHeight, railWidth, railWidth);
+    const railRight = new THREE.Mesh(railRightGeometry, railMaterial);
+    const rightX = Math.cos(angle) * radius + Math.sin(angle) * railOffset;
+    const rightZ = Math.sin(angle) * radius - Math.cos(angle) * railOffset;
+    railRight.position.set(rightX, railHeight / 2 + sleeperHeight, rightZ);
+    railRight.rotation.y = angle + Math.PI / 2;
+    railRight.castShadow = true;
+    railRight.receiveShadow = true;
+    railGroup.add(railRight);
+  }
+  
+  // レールを連続させる（各セグメント間を接続）
+  for (let i = 0; i < segmentCount; i++) {
+    const angle1 = (i / segmentCount) * Math.PI * 2;
+    const angle2 = ((i + 1) % segmentCount / segmentCount) * Math.PI * 2;
+    
+    // 左レールの接続部分
+    const railLeftConnectorGeometry = new THREE.BoxGeometry(railHeight, railWidth, railWidth * 2);
+    const railLeftConnector = new THREE.Mesh(railLeftConnectorGeometry, railMaterial);
+    const midAngle = (angle1 + angle2) / 2;
+    const leftMidX = Math.cos(midAngle) * radius - Math.sin(midAngle) * (sleeperLength / 2 - 0.3);
+    const leftMidZ = Math.sin(midAngle) * radius + Math.cos(midAngle) * (sleeperLength / 2 - 0.3);
+    railLeftConnector.position.set(leftMidX, railHeight / 2 + sleeperHeight, leftMidZ);
+    railLeftConnector.rotation.y = midAngle + Math.PI / 2;
+    railLeftConnector.castShadow = true;
+    railLeftConnector.receiveShadow = true;
+    railGroup.add(railLeftConnector);
+    
+    // 右レールの接続部分
+    const railRightConnectorGeometry = new THREE.BoxGeometry(railHeight, railWidth, railWidth * 2);
+    const railRightConnector = new THREE.Mesh(railRightConnectorGeometry, railMaterial);
+    const rightMidX = Math.cos(midAngle) * radius + Math.sin(midAngle) * (sleeperLength / 2 - 0.3);
+    const rightMidZ = Math.sin(midAngle) * radius - Math.cos(midAngle) * (sleeperLength / 2 - 0.3);
+    railRightConnector.position.set(rightMidX, railHeight / 2 + sleeperHeight, rightMidZ);
+    railRightConnector.rotation.y = midAngle + Math.PI / 2;
+    railRightConnector.castShadow = true;
+    railRightConnector.receiveShadow = true;
+    railGroup.add(railRightConnector);
+  }
+  
+  scene.add(railGroup);
+}
+
+// 地面の周囲に線路を配置（地面の半径より少し外側に配置）
+createRailway(SIZES.GROUND_RADIUS + 0.5, 120);
+
+// 地面の作成（円形の土台）
+const groundGeometry = new THREE.CircleGeometry(SIZES.GROUND_RADIUS, 64); // 64セグメントで滑らかな円
+const groundMaterial = new THREE.MeshStandardMaterial({ color: COLORS.GROUND });
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-// 地面を水平にする（傾きなし）
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
+// 物理ボディも円形に（平面として扱う）
+// CANNON.PlaneはデフォルトでYZ平面にあり、法線が+X方向を向いている
+// Y=0の水平面（XZ平面）にするには、X軸周りに-90度回転させる
+// しかし、CANNON.jsでは、Planeを水平にするには、Y軸周りに回転させる必要がある
+// 実際には、Planeを-90度回転させることで、法線が+Y方向（上向き）になる
 const groundShape = new CANNON.Plane();
 const groundBody = new CANNON.Body({ mass: 0 });
 groundBody.addShape(groundShape);
-// 水平な地面（X軸周りに-90度回転のみ）
+groundBody.position.set(0, 0, 0); // 地面の位置を明示的に設定（Y=0の平面）
+// X軸周りに-90度回転して水平にする（法線が+Y方向、つまり上向きになる）
 groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
-groundBody.material = new CANNON.Material({ friction: 0.3, restitution: 0.5 });
+groundBody.material = new CANNON.Material({ 
+  friction: PHYSICS.GROUND_FRICTION, 
+  restitution: PHYSICS.GROUND_RESTITUTION 
+});
 world.addBody(groundBody);
 
 // オブジェクトの管理
 interface GameObject {
   mesh: THREE.Mesh;
   body: CANNON.Body;
-  type: 'ball' | 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'penguin' | 'cow';
+  type: 'ball' | 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'penguin' | 'cow' | 'stairs' | 'train';
+  orbitAngle?: number; // 新幹線の周回角度
+  orbitSpeed?: number; // 新幹線の周回速度
   pivotBody?: CANNON.Body; // シーソーの支点（オプション）
   constraint?: CANNON.Constraint; // シーソーのジョイント（オプション）
   pivotMesh?: THREE.Mesh; // シーソーの支点のメッシュ（オプション）
   patrolDirection?: { x: number; z: number }; // ペンギン・牛の移動方向
   patrolTimer?: number; // 移動方向を変更するタイマー
+  isEating?: boolean; // 牛が草を食べているか
+  eatingTimer?: number; // 草を食べている時間
+  headGroup?: THREE.Group; // 牛の頭のグループ（アニメーション用）
+  initialPosition?: CANNON.Vec3; // ガードレールの初期位置
+  initialQuaternion?: CANNON.Quaternion; // ガードレールの初期角度
+  isReturning?: boolean; // ガードレールが元の位置に戻っているか
+  stairsBodies?: CANNON.Body[]; // 階段の各ステップの物理ボディ（階段専用）
+  stairsGroup?: THREE.Group; // 階段のグループ（階段専用）
 }
 
 const gameObjects: GameObject[] = [];
@@ -182,17 +429,17 @@ let dragPlane: THREE.Plane | null = null;
 let dragOffset = new THREE.Vector3();
 let selectedObjectOriginalMaterial: THREE.Material | THREE.Material[] | null = null;
 const highlightMaterial = new THREE.MeshStandardMaterial({ 
-  color: 0xffff00,
-  emissive: 0xffff00,
+  color: COLORS.HIGHLIGHT,
+  emissive: COLORS.HIGHLIGHT,
   emissiveIntensity: 0.3
 });
 
 // ビー玉の作成
 function createBall(position: { x: number; y: number; z: number }, initialVelocity?: { x: number; y: number; z: number }): GameObject {
-  const radius = 0.2;
+  const radius = SIZES.BALL_RADIUS;
   const geometry = new THREE.SphereGeometry(radius, 32, 32);
   const material = new THREE.MeshStandardMaterial({ 
-    color: 0x00ff00,
+    color: COLORS.BALL,
     metalness: 0.8,
     roughness: 0.2
   });
@@ -233,13 +480,13 @@ function createBall(position: { x: number; y: number; z: number }, initialVeloci
 
 // ドミノの作成
 function createDomino(position: { x: number; y: number; z: number }): GameObject {
-  const width = 0.1;
-  const height = 0.8;
-  const depth = 0.3;
+  const width = SIZES.DOMINO.width;
+  const height = SIZES.DOMINO.height;
+  const depth = SIZES.DOMINO.depth;
   
   const geometry = new THREE.BoxGeometry(width, height, depth);
   const material = new THREE.MeshStandardMaterial({ 
-    color: 0xff6b6b,
+    color: COLORS.DOMINO,
     metalness: 0.3,
     roughness: 0.7
   });
@@ -252,15 +499,28 @@ function createDomino(position: { x: number; y: number; z: number }): GameObject
   const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
   const body = new CANNON.Body({ mass: 0.3 }); // 質量を下げて倒れやすくする（軽い方が倒れやすい）
   body.addShape(shape);
-  body.position.set(position.x, position.y + height / 2, position.z);
+  const initialY = position.y + height / 2;
+  body.position.set(position.x, initialY, position.z);
   // 立った状態で初期化
-  body.quaternion.set(0, 0, 0, 1);
+  const initialQuaternion = new CANNON.Quaternion();
+  initialQuaternion.set(0, 0, 0, 1); // 単位クォータニオン（立った状態）
+  body.quaternion.copy(initialQuaternion);
   body.material = new CANNON.Material({ friction: 0.2, restitution: 0.6 }); // 摩擦を下げ、反発を上げて倒れやすくする
   body.linearDamping = 0.01; // 空気抵抗を低く
   body.angularDamping = 0.005; // 回転抵抗をさらに下げて、倒れやすくする
   world.addBody(body);
 
-  return { mesh, body, type: 'domino' };
+  // 初期位置と角度を保存
+  const initialPosition = new CANNON.Vec3(position.x, initialY, position.z);
+
+  return { 
+    mesh, 
+    body, 
+    type: 'domino',
+    initialPosition: initialPosition,
+    initialQuaternion: initialQuaternion.clone(),
+    isReturning: false
+  };
 }
 
 // 坂の作成
@@ -468,6 +728,91 @@ function createShrine(position: { x: number; y: number; z: number }): GameObject
   return { mesh, body, type: 'shrine' };
 }
 
+// 階段の作成（一つのオブジェクトとして扱う）
+function createStairs(
+  startPos: { x: number; y: number; z: number },
+  endPos: { x: number; y: number; z: number },
+  stepWidth: number = 1.5,
+  stepHeight: number = 0.3,
+  stepDepth: number = 0.5
+): GameObject {
+  const group = new THREE.Group();
+  const stairsBodies: CANNON.Body[] = [];
+  
+  // 階段の方向と距離を計算
+  const dx = endPos.x - startPos.x;
+  const dz = endPos.z - startPos.z;
+  const dy = endPos.y - startPos.y;
+  const angle = Math.atan2(dz, dx);
+  
+  // 必要なステップ数を計算
+  const numSteps = Math.max(1, Math.ceil(Math.abs(dy) / stepHeight));
+  const actualStepHeight = dy / numSteps;
+  
+  // グループの中心位置（開始位置と終了位置の中点）
+  const centerX = (startPos.x + endPos.x) / 2;
+  const centerY = (startPos.y + endPos.y) / 2;
+  const centerZ = (startPos.z + endPos.z) / 2;
+  group.position.set(centerX, centerY, centerZ);
+  
+  // 各ステップを作成（グループの中心を基準に相対位置で配置）
+  for (let i = 0; i < numSteps; i++) {
+    const stepY = startPos.y + actualStepHeight * (i + 0.5) - centerY;
+    const stepX = startPos.x + (dx / numSteps) * (i + 0.5) - centerX;
+    const stepZ = startPos.z + (dz / numSteps) * (i + 0.5) - centerZ;
+    
+    // ステップのジオメトリ
+    const stepGeometry = new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth);
+    const stepMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xaa9a8a, // 階段の色（明るい石色で目立つように）
+      roughness: 0.8,
+      metalness: 0.1
+    });
+    const stepMesh = new THREE.Mesh(stepGeometry, stepMaterial);
+    stepMesh.position.set(stepX, stepY, stepZ);
+    stepMesh.rotation.y = angle;
+    stepMesh.castShadow = true;
+    stepMesh.receiveShadow = true;
+    group.add(stepMesh);
+    
+    // ステップの物理ボディ（グループの中心を基準に相対位置で配置）
+    const stepShape = new CANNON.Box(new CANNON.Vec3(stepWidth / 2, stepHeight / 2, stepDepth / 2));
+    const stepBody = new CANNON.Body({ mass: 0 }); // 固定
+    stepBody.addShape(stepShape);
+    stepBody.position.set(centerX + stepX, centerY + stepY, centerZ + stepZ);
+    stepBody.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), angle);
+    stepBody.material = new CANNON.Material({ friction: 0.3, restitution: 0.1 });
+    world.addBody(stepBody);
+    stairsBodies.push(stepBody);
+  }
+  
+  scene.add(group);
+  
+  // グループ全体を一つのメッシュとして扱うためのダミーメッシュ（レイキャスティング用）
+  const boundingBox = new THREE.Box3().setFromObject(group);
+  const size = boundingBox.getSize(new THREE.Vector3());
+  const center = boundingBox.getCenter(new THREE.Vector3());
+  const dummyGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const dummyMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xaa9a8a,
+    transparent: true,
+    opacity: 0.01, // ほぼ透明（クリック検出用）
+    visible: true // レイキャスティングで検出するために表示（ほぼ透明）
+  });
+  const dummyMesh = new THREE.Mesh(dummyGeometry, dummyMaterial);
+  dummyMesh.position.copy(center);
+  group.add(dummyMesh);
+  
+  // 一つのGameObjectとして返す（グループをメッシュとして扱う）
+  return {
+    mesh: group as any, // グループをメッシュとして扱う
+    body: stairsBodies[0] || new CANNON.Body({ mass: 0 }), // 最初のステップのボディを基準に
+    type: 'stairs',
+    stairsBodies: stairsBodies,
+    stairsGroup: group
+  };
+}
+
 // 道路の作成
 function createRoad(
   startPos: { x: number; y: number; z: number },
@@ -548,6 +893,60 @@ function createPlank(
   return { mesh, body, type: 'plank' };
 }
 
+// 牧草ゾーンの作成
+function createGrassZone(
+  position: { x: number; y: number; z: number },
+  width: number = 10,
+  depth: number = 10
+): void {
+  // 牧草ゾーンの地面（緑色）
+  const grassGeometry = new THREE.PlaneGeometry(width, depth);
+  const grassMaterial = new THREE.MeshStandardMaterial({ 
+    color: COLORS.GRASS,
+    roughness: 0.9
+  });
+  const grassPlane = new THREE.Mesh(grassGeometry, grassMaterial);
+  grassPlane.rotation.x = -Math.PI / 2;
+  grassPlane.position.set(position.x, position.y + 0.01, position.z);
+  grassPlane.receiveShadow = true;
+  scene.add(grassPlane);
+  
+  // 草のメッシュを複数配置（ランダムに散りばめる）
+  const numGrassBlades = PASTURE.NUM_GRASS_BLADES;
+  const grassGroup = new THREE.Group();
+  
+  for (let i = 0; i < numGrassBlades; i++) {
+    // ランダムな位置
+    const x = position.x + (Math.random() - 0.5) * width;
+    const z = position.z + (Math.random() - 0.5) * depth;
+    
+    // 草の葉（細長い箱）
+    const bladeGeometry = new THREE.BoxGeometry(0.05, 0.3, 0.05);
+    const bladeMaterial = new THREE.MeshStandardMaterial({ 
+      color: COLORS.GRASS_BLADE,
+      roughness: 0.8
+    });
+    const blade = new THREE.Mesh(bladeGeometry, bladeMaterial);
+    blade.position.set(x, position.y + 0.15, z);
+    blade.rotation.z = (Math.random() - 0.5) * 0.3; // 少し傾ける
+    blade.rotation.y = Math.random() * Math.PI * 2; // ランダムな方向
+    
+    // 草の束（複数の葉を束ねる）
+    const bundle = new THREE.Group();
+    for (let j = 0; j < 3; j++) {
+      const singleBlade = blade.clone();
+      singleBlade.position.x += (Math.random() - 0.5) * 0.1;
+      singleBlade.position.z += (Math.random() - 0.5) * 0.1;
+      singleBlade.rotation.z += (Math.random() - 0.5) * 0.2;
+      bundle.add(singleBlade);
+    }
+    
+    grassGroup.add(bundle);
+  }
+  
+  scene.add(grassGroup);
+}
+
 // ガードレールの作成
 function createGuardRail(
   position: { x: number; y: number; z: number },
@@ -592,16 +991,35 @@ function createGuardRail(
   
   scene.add(mesh);
   
-  // 物理ボディ（ガードレールは固定）
+  // 物理ボディ（ガードレールは倒せるように質量を持つ）
   const shape = new CANNON.Box(new CANNON.Vec3(length / 2, height / 2, thickness / 2));
-  const body = new CANNON.Body({ mass: 0 }); // 固定（動かない）
+  // 質量を計算（体積 × 密度、金属なので密度は高い）
+  const volume = length * height * thickness;
+  const density = 2.0; // 金属の密度（kg/m³、簡略化）
+  const mass = volume * density;
+  const body = new CANNON.Body({ mass: mass }); // 質量を持つ（倒せる）
   body.addShape(shape);
-  body.position.set(position.x, position.y + height / 2, position.z);
-  body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), rotationY);
+  const initialY = position.y + height / 2;
+  body.position.set(position.x, initialY, position.z);
+  const initialQuaternion = new CANNON.Quaternion();
+  initialQuaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), rotationY);
+  body.quaternion.copy(initialQuaternion);
   body.material = new CANNON.Material({ friction: 0.5, restitution: 0.4 });
+  body.linearDamping = 0.3; // 空気抵抗
+  body.angularDamping = 0.3; // 回転抵抗
   world.addBody(body);
   
-  return { mesh, body, type: 'guardrail' };
+  // 初期位置と角度を保存
+  const initialPosition = new CANNON.Vec3(position.x, initialY, position.z);
+  
+  return { 
+    mesh, 
+    body, 
+    type: 'guardrail',
+    initialPosition: initialPosition,
+    initialQuaternion: initialQuaternion.clone(),
+    isReturning: false
+  };
 }
 
 // ペンギンの作成
@@ -747,6 +1165,8 @@ function createCow(position: { x: number; y: number; z: number }): GameObject {
   });
   
   // 牛の頭（白をベースに、黒いまだら模様）
+  // 頭をグループ化して、草を食べる時にアニメーションできるようにする
+  const headGroup = new THREE.Group();
   const headGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.6);
   const headMaterial = new THREE.MeshStandardMaterial({ 
     color: 0xffffff, // 白をベース
@@ -754,51 +1174,65 @@ function createCow(position: { x: number; y: number; z: number }): GameObject {
   });
   const head = new THREE.Mesh(headGeometry, headMaterial);
   head.position.set(0, 0.6, 0.7);
-  group.add(head);
+  headGroup.add(head);
+  headGroup.position.set(0, 0, 0); // グループの位置は0
+  group.add(headGroup);
   
-  // 頭の黒い模様
-  const headSpot1 = new THREE.Mesh(blackSpotGeometry, blackSpotMaterial);
-  headSpot1.position.set(-0.15, 0.65, 0.75);
-  headSpot1.scale.set(0.8, 1, 1);
-  group.add(headSpot1);
-  const headSpot2 = new THREE.Mesh(blackSpotGeometry, blackSpotMaterial);
-  headSpot2.position.set(0.15, 0.6, 0.8);
-  headSpot2.scale.set(0.7, 0.8, 1);
-  group.add(headSpot2);
+  // 頭の黒い模様（目の周り、頭の横に配置、画像に合わせて）（頭グループに追加）
+  // 左目の周りの黒いパッチ
+  const headSpot1 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.2, 0.1),
+    blackSpotMaterial
+  );
+  headSpot1.position.set(-0.15, 0.65, 0.88);
+  headSpot1.rotation.y = -0.2; // 少し角度をつける
+  headGroup.add(headSpot1);
   
-  // 牛の耳（白と黒のまだら）
-  const earGeometry = new THREE.BoxGeometry(0.15, 0.3, 0.1);
+  // 右目の周りの黒いパッチ
+  const headSpot2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.2, 0.1),
+    blackSpotMaterial
+  );
+  headSpot2.position.set(0.15, 0.65, 0.88);
+  headSpot2.rotation.y = 0.2; // 少し角度をつける
+  headGroup.add(headSpot2);
+  
+  // 頭の横の黒いパッチ（左側）
+  const headSpot3 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.15, 0.08),
+    blackSpotMaterial
+  );
+  headSpot3.position.set(-0.22, 0.6, 0.75);
+  headGroup.add(headSpot3);
+  
+  // 頭の横の黒いパッチ（右側）
+  const headSpot4 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.15, 0.08),
+    blackSpotMaterial
+  );
+  headSpot4.position.set(0.22, 0.6, 0.75);
+  headGroup.add(headSpot4);
+  
+  // 牛の耳（茶色のフェルト、画像に合わせて丸みを帯びた形状）（頭グループに追加）
+  const earGeometry = new THREE.CylinderGeometry(0.08, 0.12, 0.25, 8);
   const earMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0xffffff,
-    roughness: 0.8
+    color: 0xd2b48c, // 茶色（フェルト色）
+    roughness: 0.9,
+    metalness: 0.0
   });
   const leftEar = new THREE.Mesh(earGeometry, earMaterial);
   leftEar.position.set(-0.25, 0.75, 0.85);
   leftEar.rotation.z = Math.PI / 6;
-  group.add(leftEar);
-  // 耳の黒い模様
-  const leftEarSpot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 0.2, 0.05),
-    blackSpotMaterial
-  );
-  leftEarSpot.position.set(-0.25, 0.75, 0.9);
-  leftEarSpot.rotation.z = Math.PI / 6;
-  group.add(leftEarSpot);
+  leftEar.rotation.x = Math.PI / 12; // 少し前に傾ける
+  headGroup.add(leftEar);
   
   const rightEar = new THREE.Mesh(earGeometry, earMaterial);
   rightEar.position.set(0.25, 0.75, 0.85);
   rightEar.rotation.z = -Math.PI / 6;
-  group.add(rightEar);
-  // 耳の黒い模様
-  const rightEarSpot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 0.2, 0.05),
-    blackSpotMaterial
-  );
-  rightEarSpot.position.set(0.25, 0.75, 0.9);
-  rightEarSpot.rotation.z = -Math.PI / 6;
-  group.add(rightEarSpot);
+  rightEar.rotation.x = Math.PI / 12; // 少し前に傾ける
+  headGroup.add(rightEar);
   
-  // 牛の角（黒）
+  // 牛の角（黒）（頭グループに追加）
   const hornGeometry = new THREE.ConeGeometry(0.05, 0.2, 8);
   const hornMaterial = new THREE.MeshStandardMaterial({ 
     color: 0x000000, // 黒
@@ -807,21 +1241,35 @@ function createCow(position: { x: number; y: number; z: number }): GameObject {
   const leftHorn = new THREE.Mesh(hornGeometry, hornMaterial);
   leftHorn.position.set(-0.15, 0.9, 0.85);
   leftHorn.rotation.x = -Math.PI / 6;
-  group.add(leftHorn);
+  headGroup.add(leftHorn);
   const rightHorn = new THREE.Mesh(hornGeometry, hornMaterial);
   rightHorn.position.set(0.15, 0.9, 0.85);
   rightHorn.rotation.x = -Math.PI / 6;
-  group.add(rightHorn);
+  headGroup.add(rightHorn);
   
-  // 牛の目（黒）
-  const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 8);
-  const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+  // 牛の目（小さな丸い黒いプラスチックの目、画像に合わせて）（頭グループに追加）
+  const eyeGeometry = new THREE.SphereGeometry(0.06, 12, 12);
+  const eyeMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x000000,
+    roughness: 0.1, // 光沢のあるプラスチック感
+    metalness: 0.3
+  });
   const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-  leftEye.position.set(-0.15, 0.65, 0.95);
-  group.add(leftEye);
+  leftEye.position.set(-0.15, 0.65, 0.96);
+  headGroup.add(leftEye);
   const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-  rightEye.position.set(0.15, 0.65, 0.95);
-  group.add(rightEye);
+  rightEye.position.set(0.15, 0.65, 0.96);
+  headGroup.add(rightEye);
+  
+  // 牛の鼻（白で少し突出、画像に合わせて）（頭グループに追加）
+  const noseGeometry = new THREE.BoxGeometry(0.2, 0.15, 0.1);
+  const noseMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xffffff,
+    roughness: 0.8
+  });
+  const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+  nose.position.set(0, 0.55, 1.0); // 少し前に突出
+  headGroup.add(nose);
   
   // 牛の足（4本、白と黒のまだら）
   const legGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8);
@@ -870,6 +1318,40 @@ function createCow(position: { x: number; y: number; z: number }): GameObject {
   backRightLegSpot.position.set(0.25, 0.35, -0.4);
   group.add(backRightLegSpot);
   
+  // 首の周りの緑のリボン（画像に合わせて）（頭グループに追加）
+  const ribbonMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x32cd32, // 明るい緑
+    roughness: 0.3, // サテン感
+    metalness: 0.1
+  });
+  
+  // リボンの本体（首の周り）
+  const ribbonBodyGeometry = new THREE.TorusGeometry(0.35, 0.03, 8, 16);
+  const ribbonBody = new THREE.Mesh(ribbonBodyGeometry, ribbonMaterial);
+  ribbonBody.position.set(0, 0.5, 0.65);
+  ribbonBody.rotation.x = Math.PI / 2;
+  headGroup.add(ribbonBody);
+  
+  // リボンの弓結び（左側のループ）
+  const bowLoop1Geometry = new THREE.TorusGeometry(0.05, 0.025, 8, 16);
+  const bowLoop1 = new THREE.Mesh(bowLoop1Geometry, ribbonMaterial);
+  bowLoop1.position.set(-0.08, 0.53, 0.65);
+  bowLoop1.rotation.z = Math.PI / 4;
+  headGroup.add(bowLoop1);
+  
+  // リボンの弓結び（右側のループ）
+  const bowLoop2Geometry = new THREE.TorusGeometry(0.05, 0.025, 8, 16);
+  const bowLoop2 = new THREE.Mesh(bowLoop2Geometry, ribbonMaterial);
+  bowLoop2.position.set(0.08, 0.53, 0.65);
+  bowLoop2.rotation.z = -Math.PI / 4;
+  headGroup.add(bowLoop2);
+  
+  // リボンの中心部分（結び目）
+  const bowCenterGeometry = new THREE.BoxGeometry(0.06, 0.04, 0.03);
+  const bowCenter = new THREE.Mesh(bowCenterGeometry, ribbonMaterial);
+  bowCenter.position.set(0, 0.52, 0.68);
+  headGroup.add(bowCenter);
+  
   group.position.set(position.x, position.y, position.z);
   group.castShadow = true;
   group.receiveShadow = true;
@@ -879,6 +1361,7 @@ function createCow(position: { x: number; y: number; z: number }): GameObject {
   const shape = new CANNON.Box(new CANNON.Vec3(0.4, 0.5, 0.6));
   const bodyPhy = new CANNON.Body({ mass: 5 }); // 牛は重い
   bodyPhy.addShape(shape);
+  // 牛の物理ボディの中心位置：牛の高さが1.0（0.5 * 2）なので、底部がposition.yになるように設定
   bodyPhy.position.set(position.x, position.y + 0.5, position.z);
   bodyPhy.material = new CANNON.Material({ friction: 0.7, restitution: 0.2 });
   bodyPhy.linearDamping = 0.6; // 移動抵抗
@@ -897,9 +1380,215 @@ function createCow(position: { x: number; y: number; z: number }): GameObject {
     body: bodyPhy, 
     type: 'cow',
     patrolDirection: patrolDirection,
-    patrolTimer: Math.random() * 3 + 2 // 2-5秒後に方向変更
+    patrolTimer: Math.random() * 3 + 2, // 2-5秒後に方向変更
+    isEating: false,
+    eatingTimer: 0,
+    headGroup: headGroup // 頭のグループを保存（アニメーション用）
   };
 }
+
+// 新幹線の1両を作成する関数
+function createTrainCar(isFirstCar: boolean = false): THREE.Group {
+  const carGroup = new THREE.Group();
+  
+  // 新幹線の本体（長い箱、大きめに）
+  const bodyLength = 3.0; // 1両の長さ
+  const bodyWidth = 1.0;
+  const bodyHeight = 1.2;
+  const bodyGeometry = new THREE.BoxGeometry(bodyLength, bodyHeight, bodyWidth);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xffffff, // 白をベース
+    metalness: 0.8,
+    roughness: 0.2
+  });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.set(0, bodyHeight / 2, 0);
+  carGroup.add(body);
+  
+  // 先頭車両のみ先頭を追加
+  if (isFirstCar) {
+    const noseGeometry = new THREE.ConeGeometry(0.6, 1.5, 8);
+    const noseMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xffffff,
+      metalness: 0.8,
+      roughness: 0.2
+    });
+    const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+    nose.position.set(bodyLength / 2 + 0.75, bodyHeight / 2, 0);
+    // 円錐の尖っている側が前（X方向）を向くように回転
+    nose.rotation.z = -Math.PI / 2; // Z軸周りに-90度回転（X方向を向く）
+    carGroup.add(nose);
+  }
+  
+  // 新幹線のライン（特徴的な青いライン）
+  const lineGeometry = new THREE.BoxGeometry(bodyLength, 0.15, bodyWidth + 0.1);
+  const lineMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x0066cc, // 青いライン
+    metalness: 0.5,
+    roughness: 0.3
+  });
+  const line1 = new THREE.Mesh(lineGeometry, lineMaterial);
+  line1.position.set(0, bodyHeight / 2 - 0.15, 0);
+  carGroup.add(line1);
+  
+  const line2 = new THREE.Mesh(lineGeometry, lineMaterial);
+  line2.position.set(0, bodyHeight / 2 - 0.5, 0);
+  carGroup.add(line2);
+  
+  // 新幹線の窓（複数の窓を表現）
+  const windowMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x1a1a1a, // 暗い色（ガラスのように）
+    metalness: 0.3,
+    roughness: 0.1,
+    transparent: true,
+    opacity: 0.3
+  });
+  const numWindows = 4; // 1両あたりの窓の数
+  for (let i = 0; i < numWindows; i++) {
+    const windowGeometry = new THREE.BoxGeometry(0.4, 0.5, 0.02);
+    const window = new THREE.Mesh(windowGeometry, windowMaterial);
+    const x = -bodyLength / 2 + 0.5 + i * 0.7;
+    window.position.set(x, bodyHeight / 2 + 0.15, bodyWidth / 2 + 0.01);
+    carGroup.add(window);
+  }
+  
+  // 新幹線の車輪（複数の車輪）
+  const wheelGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.15, 16);
+  const wheelMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x333333, // 黒い車輪
+    metalness: 0.5,
+    roughness: 0.5
+  });
+  const numWheels = 2; // 1両あたりの車輪の数
+  for (let i = 0; i < numWheels; i++) {
+    const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+    const x = -bodyLength / 2 + 0.7 + i * 1.6;
+    wheel.position.set(x, 0.2, bodyWidth / 2 + 0.15);
+    wheel.rotation.z = Math.PI / 2;
+    carGroup.add(wheel);
+    
+    // 反対側の車輪
+    const wheel2 = wheel.clone();
+    wheel2.position.z = -bodyWidth / 2 - 0.15;
+    carGroup.add(wheel2);
+  }
+  
+  return carGroup;
+}
+
+// 新幹線の作成（16両編成）
+function createTrain(position: { x: number; y: number; z: number }, initialAngle: number = 0): GameObject {
+  const group = new THREE.Group();
+  const numCars = 1; // 1両編成
+  const carLength = 3.0; // 1両の長さ
+  const totalLength = numCars * carLength; // 全長
+  
+  // 1両の車両を作成（先頭車両として作成）
+  const car = createTrainCar(true);
+  car.position.set(0, 0, 0);
+  group.add(car);
+  
+  group.position.set(position.x, position.y, position.z);
+  group.rotation.y = initialAngle;
+  group.castShadow = true;
+  group.receiveShadow = true;
+  scene.add(group);
+  
+  // 物理ボディ（固定、周回アニメーション用、1両分の長さ）
+  const bodyHeight = 1.2;
+  const bodyWidth = 1.0;
+  const shape = new CANNON.Box(new CANNON.Vec3(totalLength / 2, bodyHeight / 2, bodyWidth / 2));
+  const bodyPhy = new CANNON.Body({ mass: 0 }); // 固定（物理シミュレーションには参加しない）
+  bodyPhy.addShape(shape);
+  bodyPhy.position.set(position.x, position.y + bodyHeight / 2, position.z);
+  bodyPhy.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), initialAngle);
+  world.addBody(bodyPhy);
+  
+  return {
+    mesh: group as any,
+    body: bodyPhy,
+    type: 'train',
+    orbitAngle: initialAngle,
+    orbitSpeed: 0.02 // 周回速度（ラジアン/フレーム）
+  };
+}
+
+// ============================================================================
+// 共通処理関数
+// ============================================================================
+
+/**
+ * オブジェクトが倒れた場合、自動的に元の位置に戻す処理
+ */
+function handleObjectReturn(obj: GameObject): void {
+  if (!obj.initialPosition || !obj.initialQuaternion) return;
+  
+  const pos = obj.body.position;
+  const quat = obj.body.quaternion;
+  const initialPos = obj.initialPosition;
+  const initialQuat = obj.initialQuaternion;
+  
+  // オブジェクトが倒れているかチェック
+  const positionDiff = pos.distanceTo(initialPos);
+  const quatDiff = quat.x * initialQuat.x + quat.y * initialQuat.y + 
+                   quat.z * initialQuat.z + quat.w * initialQuat.w;
+  const isFallen = positionDiff > RETURN_CONFIG.POSITION_THRESHOLD || 
+                   quatDiff < RETURN_CONFIG.QUATERNION_THRESHOLD;
+  
+  if (isFallen && !obj.isReturning) {
+    obj.isReturning = true;
+  }
+  
+  if (obj.isReturning) {
+    // 位置を補間
+    pos.x = pos.x + (initialPos.x - pos.x) * RETURN_CONFIG.LERP_FACTOR;
+    pos.y = pos.y + (initialPos.y - pos.y) * RETURN_CONFIG.LERP_FACTOR;
+    pos.z = pos.z + (initialPos.z - pos.z) * RETURN_CONFIG.LERP_FACTOR;
+    
+    // 角度を補間（スレルップ補間）
+    const targetQuat = initialQuat.clone();
+    const dot = quat.x * targetQuat.x + quat.y * targetQuat.y + 
+                quat.z * targetQuat.z + quat.w * targetQuat.w;
+    
+    if (dot < 0) {
+      targetQuat.x = -targetQuat.x;
+      targetQuat.y = -targetQuat.y;
+      targetQuat.z = -targetQuat.z;
+      targetQuat.w = -targetQuat.w;
+    }
+    
+    quat.x = quat.x + (targetQuat.x - quat.x) * RETURN_CONFIG.LERP_FACTOR;
+    quat.y = quat.y + (targetQuat.y - quat.y) * RETURN_CONFIG.LERP_FACTOR;
+    quat.z = quat.z + (targetQuat.z - quat.z) * RETURN_CONFIG.LERP_FACTOR;
+    quat.w = quat.w + (targetQuat.w - quat.w) * RETURN_CONFIG.LERP_FACTOR;
+    quat.normalize();
+    
+    // 物理ボディの位置と角度を更新
+    obj.body.position.copy(pos);
+    obj.body.quaternion.copy(quat);
+    
+    // 速度を減らす
+    obj.body.velocity.scale(RETURN_CONFIG.VELOCITY_DAMPING);
+    obj.body.angularVelocity.scale(RETURN_CONFIG.VELOCITY_DAMPING);
+    
+    // 元の位置と角度に十分近づいたら復帰完了
+    const finalPositionDiff = pos.distanceTo(initialPos);
+    const finalQuatDiff = quat.x * initialQuat.x + quat.y * initialQuat.y + 
+                          quat.z * initialQuat.z + quat.w * initialQuat.w;
+    if (finalPositionDiff < RETURN_CONFIG.FINAL_POSITION_THRESHOLD && 
+        finalQuatDiff > RETURN_CONFIG.FINAL_QUATERNION_THRESHOLD) {
+      obj.body.position.copy(initialPos);
+      obj.body.quaternion.copy(initialQuat);
+      obj.body.velocity.set(0, 0, 0);
+      obj.body.angularVelocity.set(0, 0, 0);
+      obj.isReturning = false;
+    }
+  }
+}
+
+// ============================================================================
+// オブジェクト作成関数
+// ============================================================================
 
 // オブジェクトの削除
 function removeObject(obj: GameObject) {
@@ -938,7 +1627,7 @@ function removeObject(obj: GameObject) {
 
 // オブジェクト間の衝突判定（重なりチェック）
 function checkCollision(
-  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail',
+  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'mountain' | 'shrine' | 'road' | 'plank' | 'guardrail' | 'stairs',
   position: { x: number; y: number; z: number },
   excludeObject?: GameObject
 ): boolean {
@@ -972,6 +1661,9 @@ function checkCollision(
       break;
     case 'guardrail':
       bounds = { width: 3, height: 0.5, depth: 0.1 }; // ガードレールの長さ、高さ、厚さ
+      break;
+    case 'stairs':
+      bounds = { width: 1.5, height: 0.3, depth: 0.5 }; // 階段のステップのサイズ
       break;
   }
   
@@ -1012,6 +1704,9 @@ function checkCollision(
       case 'plank':
         existingBounds = { width: 4, depth: 1.5 }; // 板の長さと幅
         break;
+      case 'stairs':
+        existingBounds = { width: 1.5, depth: 0.5 }; // 階段のステップのサイズ
+        break;
       case 'guardrail':
         existingBounds = { width: 3, depth: 0.1 }; // ガードレールの長さと厚さ
         break;
@@ -1037,7 +1732,7 @@ function checkCollision(
 
 // 空いている位置を探す
 function findFreePosition(
-  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'plank' | 'guardrail',
+  type: 'domino' | 'ramp' | 'box' | 'seesaw' | 'plank' | 'guardrail' | 'stairs' | 'shrine' | 'mountain',
   centerX: number = 0,
   centerZ: number = 0,
   maxAttempts: number = 50,
@@ -1291,6 +1986,40 @@ document.getElementById('add-guardrail')?.addEventListener('click', () => {
   }
 });
 
+// 神社を追加するボタン
+document.getElementById('add-shrine')?.addEventListener('click', () => {
+  // 重複しない位置を探す（神社は大きいので検索範囲を広げる）
+  const position = findFreePosition('shrine', 0, 0, 100, 15);
+  if (position) {
+    // 神社を地面の高さに配置
+    const shrine = createShrine({ x: position.x, y: 0, z: position.z });
+    gameObjects.push(shrine);
+  }
+});
+
+// 階段を追加するボタン
+document.getElementById('add-stairs')?.addEventListener('click', () => {
+  // 階段の開始位置（地面の高さ、ランダムな位置）
+  const startX = (Math.random() - 0.5) * 20;
+  const startY = 0.2; // 地面の少し上
+  const startZ = (Math.random() - 0.5) * 20;
+  
+  // 階段の終了位置（開始位置から少し離れた位置、上方向に）
+  const endX = startX + (Math.random() - 0.5) * 4 + 2; // 2-4ユニット離れた位置
+  const endY = startY + Math.random() * 2 + 1; // 1-3ユニット高い位置
+  const endZ = startZ + (Math.random() - 0.5) * 4 + 2;
+  
+  // 階段を作成
+  const stairs = createStairs(
+    { x: startX, y: startY, z: startZ },
+    { x: endX, y: endY, z: endZ },
+    2.5, // ステップの幅
+    0.5, // ステップの高さ
+    0.8  // ステップの奥行き
+  );
+  gameObjects.push(stairs);
+});
+
 // ビー玉の数の変数
 let ballCount = 1;
 const ballCountInput = document.getElementById('ball-count') as HTMLInputElement;
@@ -1383,19 +2112,74 @@ document.getElementById('reset-ball')?.addEventListener('click', () => {
   });
 });
 
+document.getElementById('remove-ball')?.addEventListener('click', () => {
+  // すべてのビー玉を削除
+  const ballsToRemove: GameObject[] = [];
+  gameObjects.forEach(obj => {
+    if (obj.type === 'ball') {
+      ballsToRemove.push(obj);
+    }
+  });
+  
+  ballsToRemove.forEach(ball => {
+    const ballIndex = gameObjects.indexOf(ball);
+    if (ballIndex > -1) {
+      gameObjects.splice(ballIndex, 1);
+    }
+    removeObject(ball);
+  });
+  
+  // 古いball変数もクリア（互換性のため）
+  if (ball) {
+    ball = null;
+  }
+  
+  // 選択中のオブジェクトがビー玉の場合は選択を解除
+  if (selectedObject && selectedObject.type === 'ball') {
+    selectObject(null);
+  }
+});
+
 // オブジェクト選択とハイライト
 function selectObject(obj: GameObject | null) {
   // 以前の選択を解除
   if (selectedObject && selectedObjectOriginalMaterial) {
-    selectedObject.mesh.material = selectedObjectOriginalMaterial;
+    if (selectedObject.type === 'stairs' && selectedObject.stairsGroup && (selectedObject as any).originalMaterials) {
+      // 階段の場合はグループ内の全てのメッシュのマテリアルを復元
+      const originalMaterials = (selectedObject as any).originalMaterials as THREE.Material[];
+      let index = 0;
+      selectedObject.stairsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (originalMaterials[index]) {
+            child.material = originalMaterials[index];
+            index++;
+          }
+        }
+      });
+    } else {
+      selectedObject.mesh.material = selectedObjectOriginalMaterial;
+    }
   }
   
   selectedObject = obj;
   
   // 新しい選択をハイライト
   if (selectedObject && selectedObject.type !== 'ball') {
-    selectedObjectOriginalMaterial = selectedObject.mesh.material;
-    selectedObject.mesh.material = highlightMaterial.clone();
+    if (selectedObject.type === 'stairs' && selectedObject.stairsGroup) {
+      // 階段の場合はグループ内の全てのメッシュをハイライト
+      const originalMaterials: THREE.Material[] = [];
+      selectedObject.stairsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          originalMaterials.push(child.material as THREE.Material);
+          child.material = highlightMaterial.clone();
+        }
+      });
+      (selectedObject as any).originalMaterials = originalMaterials;
+      selectedObjectOriginalMaterial = null; // 階段の場合は個別に管理
+    } else {
+      selectedObjectOriginalMaterial = selectedObject.mesh.material;
+      selectedObject.mesh.material = highlightMaterial.clone();
+    }
   } else {
     selectedObjectOriginalMaterial = null;
   }
@@ -1411,13 +2195,43 @@ renderer.domElement.addEventListener('mousedown', (event) => {
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(
-    gameObjects.map(obj => obj.mesh)
-  );
+  // 階段の場合はグループ内のすべてのメッシュも対象にする
+  const objectsToIntersect: THREE.Object3D[] = [];
+  gameObjects.forEach(obj => {
+    if (obj.type === 'stairs' && obj.stairsGroup) {
+      // 階段の場合はグループ内のすべてのメッシュを追加
+      obj.stairsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          objectsToIntersect.push(child);
+        }
+      });
+    } else {
+      objectsToIntersect.push(obj.mesh);
+    }
+  });
+  const intersects = raycaster.intersectObjects(objectsToIntersect, true);
   
   if (intersects.length > 0) {
     const clickedMesh = intersects[0].object;
-    const clickedObject = gameObjects.find(obj => obj.mesh === clickedMesh) || null;
+    // 階段の場合は、クリックされたメッシュがグループ内の子要素かどうかを確認
+    let clickedObject: GameObject | null = null;
+    if (clickedMesh instanceof THREE.Mesh) {
+      // 階段のグループ内のメッシュがクリックされた場合
+      clickedObject = gameObjects.find(obj => {
+        if (obj.type === 'stairs' && obj.stairsGroup) {
+          let found = false;
+          obj.stairsGroup.traverse((child) => {
+            if (child === clickedMesh) {
+              found = true;
+            }
+          });
+          return found;
+        }
+        return obj.mesh === clickedMesh;
+      }) || null;
+    } else {
+      clickedObject = gameObjects.find(obj => obj.mesh === clickedMesh) || null;
+    }
     
     if (clickedObject && clickedObject.type !== 'ball') {
       event.preventDefault();
@@ -1429,7 +2243,10 @@ renderer.domElement.addEventListener('mousedown', (event) => {
       
       // オブジェクトの中心から交差点へのオフセットを計算
       const intersectionPoint = intersects[0].point;
-      const objectPosition = new THREE.Vector3().copy(clickedObject.mesh.position);
+      // 階段の場合はグループの位置を使用
+      const objectPosition = clickedObject.type === 'stairs' && clickedObject.stairsGroup
+        ? new THREE.Vector3().copy(clickedObject.stairsGroup.position)
+        : new THREE.Vector3().copy(clickedObject.mesh.position);
       dragOffset = new THREE.Vector3().subVectors(objectPosition, intersectionPoint);
       
       // 移動中は物理シミュレーションを一時的に無効化（質量を0に設定して固定）
@@ -1477,13 +2294,38 @@ renderer.domElement.addEventListener('mousemove', (event) => {
       // オフセットを考慮してオブジェクトを移動
       const newPosition = new THREE.Vector3().addVectors(intersection, dragOffset);
       
-      // メッシュと物理ボディの両方を更新
-      selectedObject.mesh.position.copy(newPosition);
-      selectedObject.body.position.set(
-        newPosition.x,
-        newPosition.y,
-        newPosition.z
-      );
+      // 階段の場合は全てのステップの物理ボディを移動
+      if (selectedObject.type === 'stairs' && selectedObject.stairsBodies && selectedObject.stairsGroup) {
+        const oldPosition = selectedObject.stairsGroup.position.clone();
+        const deltaX = newPosition.x - oldPosition.x;
+        const deltaY = newPosition.y - oldPosition.y;
+        const deltaZ = newPosition.z - oldPosition.z;
+        
+        // グループの位置を更新
+        selectedObject.stairsGroup.position.copy(newPosition);
+        
+        // 全てのステップの物理ボディを移動
+        selectedObject.stairsBodies.forEach(body => {
+          body.position.x += deltaX;
+          body.position.y += deltaY;
+          body.position.z += deltaZ;
+        });
+        
+        // 基準となる物理ボディも更新
+        selectedObject.body.position.set(
+          newPosition.x,
+          newPosition.y,
+          newPosition.z
+        );
+      } else {
+        // 通常のオブジェクトの移動
+        selectedObject.mesh.position.copy(newPosition);
+        selectedObject.body.position.set(
+          newPosition.x,
+          newPosition.y,
+          newPosition.z
+        );
+      }
       
       // 角度を設定（ドミノの場合は立った状態を維持）
       const originalQuaternion = (selectedObject as any).originalQuaternion;
@@ -1581,13 +2423,43 @@ renderer.domElement.addEventListener('contextmenu', (event) => {
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(
-    gameObjects.map(obj => obj.mesh)
-  );
+  // 階段の場合はグループ内のすべてのメッシュも対象にする
+  const objectsToIntersect: THREE.Object3D[] = [];
+  gameObjects.forEach(obj => {
+    if (obj.type === 'stairs' && obj.stairsGroup) {
+      // 階段の場合はグループ内のすべてのメッシュを追加
+      obj.stairsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          objectsToIntersect.push(child);
+        }
+      });
+    } else {
+      objectsToIntersect.push(obj.mesh);
+    }
+  });
+  const intersects = raycaster.intersectObjects(objectsToIntersect, true);
   
   if (intersects.length > 0) {
     const clickedMesh = intersects[0].object;
-    const clickedObject = gameObjects.find(obj => obj.mesh === clickedMesh) || null;
+    // 階段の場合は、クリックされたメッシュがグループ内の子要素かどうかを確認
+    let clickedObject: GameObject | null = null;
+    if (clickedMesh instanceof THREE.Mesh) {
+      // 階段のグループ内のメッシュがクリックされた場合
+      clickedObject = gameObjects.find(obj => {
+        if (obj.type === 'stairs' && obj.stairsGroup) {
+          let found = false;
+          obj.stairsGroup.traverse((child) => {
+            if (child === clickedMesh) {
+              found = true;
+            }
+          });
+          return found;
+        }
+        return obj.mesh === clickedMesh;
+      }) || null;
+    } else {
+      clickedObject = gameObjects.find(obj => obj.mesh === clickedMesh) || null;
+    }
     
     if (clickedObject && clickedObject.type !== 'ball') {
       const index = gameObjects.indexOf(clickedObject);
@@ -1930,6 +2802,40 @@ function initializeInitialObstacles() {
   );
   gameObjects.push(road);
   
+  // 階段を作成（神社から地面まで）
+  // 階段の開始位置（神社の前、道路の始点付近）
+  const stairsStartX = shrineX; // 神社の前
+  const stairsStartY = shrineY - 0.3; // 神社の底部付近
+  const stairsStartZ = shrineZ + 1.0; // 神社の前に出る
+  
+  // 階段の終了位置（地面、道路の終点付近）
+  const stairsEndX = roadEndX; // 道路の終点
+  const stairsEndY = mountainY + 0.2; // 地面の少し上
+  const stairsEndZ = roadEndZ; // 道路の終点
+  
+  console.log('階段作成:', {
+    start: { x: stairsStartX, y: stairsStartY, z: stairsStartZ },
+    end: { x: stairsEndX, y: stairsEndY, z: stairsEndZ },
+    shrine: { x: shrineX, y: shrineY, z: shrineZ },
+    roadEnd: { x: roadEndX, y: roadEndY, z: roadEndZ }
+  });
+  
+  const stairs = createStairs(
+    { x: stairsStartX, y: stairsStartY, z: stairsStartZ },
+    { x: stairsEndX, y: stairsEndY, z: stairsEndZ },
+    2.5, // ステップの幅（広く）
+    0.5, // ステップの高さ（高く）
+    0.8  // ステップの奥行き（深く）
+  );
+  gameObjects.push(stairs);
+  
+  // 牧草ゾーンを作成（牛が草を食べるエリア）
+  createGrassZone(
+    { x: PASTURE.CENTER_X, y: 0, z: PASTURE.CENTER_Z }, 
+    PASTURE.WIDTH, 
+    PASTURE.DEPTH
+  );
+  
   // ペンギンを3匹配置
   for (let i = 0; i < 3; i++) {
     const penguinX = (Math.random() - 0.5) * 20; // -10から10の範囲
@@ -1938,13 +2844,26 @@ function initializeInitialObstacles() {
     gameObjects.push(penguin);
   }
   
-  // 牛を2頭配置
-  for (let i = 0; i < 2; i++) {
-    const cowX = (Math.random() - 0.5) * 20; // -10から10の範囲
-    const cowZ = (Math.random() - 0.5) * 20; // -10から10の範囲
+  // 牛を10頭配置（牧草ゾーン付近に配置）
+  for (let i = 0; i < 10; i++) {
+    // 牧草ゾーン付近に配置（少しランダムに）
+    const cowX = 10 + (Math.random() - 0.5) * 8; // 6から14の範囲
+    const cowZ = 10 + (Math.random() - 0.5) * 8; // 6から14の範囲
+    // 牛の底部が地面（Y=0）に接するように、Y=0.5に配置（物理ボディの中心はY=1.0になる）
     const cow = createCow({ x: cowX, y: 0.5, z: cowZ });
     gameObjects.push(cow);
   }
+  
+  // 新幹線を配置（地面の周囲を周回）
+  const trainY = 0.8; // 新幹線の高さ（線路上）
+  // 線路の半径（地面の半径より0.5単位外側）
+  const railwayRadius = SIZES.GROUND_RADIUS + 0.5; // 25.5
+  // 線路上の初期位置を設定（右下から開始）
+  const initialAngle = Math.PI / 4; // 45度
+  const initialTrainX = railwayRadius * Math.cos(initialAngle - Math.PI / 2);
+  const initialTrainZ = railwayRadius * Math.sin(initialAngle - Math.PI / 2);
+  const train = createTrain({ x: initialTrainX, y: trainY, z: initialTrainZ }, initialAngle);
+  gameObjects.push(train);
 }
 
 // アニメーションループ
@@ -1956,10 +2875,76 @@ function animate() {
   
   const deltaTime = 1/60; // 1フレームあたりの時間
   
+  // 牧草ゾーンの定義（牛が草を食べるエリア）
+  const grassZone = {
+    minX: PASTURE.CENTER_X - PASTURE.WIDTH / 2,
+    maxX: PASTURE.CENTER_X + PASTURE.WIDTH / 2,
+    minZ: PASTURE.CENTER_Z - PASTURE.DEPTH / 2,
+    maxZ: PASTURE.CENTER_Z + PASTURE.DEPTH / 2
+  };
+  
   // ペンギンと牛のパトロール処理
   gameObjects.forEach(obj => {
     if (obj.type === 'penguin' || obj.type === 'cow') {
       if (!obj.patrolDirection || obj.patrolTimer === undefined) return;
+      
+      const pos = obj.body.position;
+      
+      // 牛の場合、牧草ゾーン内にいるかチェック
+      if (obj.type === 'cow') {
+        const isInGrassZone = pos.x >= grassZone.minX && pos.x <= grassZone.maxX &&
+                             pos.z >= grassZone.minZ && pos.z <= grassZone.maxZ;
+        
+        if (isInGrassZone && !obj.isEating) {
+          // 牧草ゾーンに入ったので草を食べ始める
+          obj.isEating = true;
+          obj.eatingTimer = Math.random() * 5 + 3; // 3-8秒間草を食べる
+          
+          // 移動を停止
+          obj.body.velocity.x = 0;
+          obj.body.velocity.z = 0;
+        } else if (obj.isEating) {
+          // 草を食べている状態
+          if (obj.eatingTimer === undefined) {
+            obj.eatingTimer = 0;
+          }
+          obj.eatingTimer -= deltaTime;
+          
+          // 頭を下げるアニメーション（草を食べる動作）
+          if (obj.headGroup) {
+            // 頭を少し下げる（最大30度）
+            const eatAngle = Math.sin(Date.now() * 0.005) * 0.3; // ゆっくりと上下に動かす
+            obj.headGroup.rotation.x = -0.3 + eatAngle * 0.1; // 下を向く
+          }
+          
+          // 食べ終わったら再び移動を開始
+          if (obj.eatingTimer <= 0) {
+            obj.isEating = false;
+            obj.eatingTimer = 0;
+            
+            // 頭を元の位置に戻す
+            if (obj.headGroup) {
+              obj.headGroup.rotation.x = 0;
+            }
+            
+            // 新しい移動方向を設定
+            const angle = Math.random() * Math.PI * 2;
+            obj.patrolDirection = {
+              x: Math.cos(angle),
+              z: Math.sin(angle)
+            };
+            obj.patrolTimer = Math.random() * (ANIMAL_CONFIG.PATROL_TIMER_MAX - ANIMAL_CONFIG.PATROL_TIMER_MIN) + ANIMAL_CONFIG.PATROL_TIMER_MIN;
+          }
+          
+          // 草を食べている間は移動しない
+          return;
+        } else {
+          // 牧草ゾーン外では頭を元の位置に戻す
+          if (obj.headGroup) {
+            obj.headGroup.rotation.x = 0;
+          }
+        }
+      }
       
       // タイマーを更新
       obj.patrolTimer -= deltaTime;
@@ -1975,16 +2960,16 @@ function animate() {
       }
       
       // 移動速度を設定
-      const speed = obj.type === 'penguin' ? 1.5 : 1.0; // ペンギンは少し速く
+      const speed = obj.type === 'penguin' ? ANIMAL_CONFIG.PENGUIN_SPEED : ANIMAL_CONFIG.COW_SPEED;
       const velocityX = obj.patrolDirection.x * speed;
       const velocityZ = obj.patrolDirection.z * speed;
       
-      // 地面の範囲内かチェック（±25の範囲）
-      const pos = obj.body.position;
-      const groundBoundary = 25;
+      // 地面の範囲内かチェック
+      const groundBoundary = SIZES.GROUND_BOUNDARY;
       
       // 境界に近づいたら方向を反転
-      if (Math.abs(pos.x) > groundBoundary - 2 || Math.abs(pos.z) > groundBoundary - 2) {
+      if (Math.abs(pos.x) > groundBoundary - ANIMAL_CONFIG.BOUNDARY_MARGIN || 
+          Math.abs(pos.z) > groundBoundary - ANIMAL_CONFIG.BOUNDARY_MARGIN) {
         // 中心に向かう方向に変更
         const angleToCenter = Math.atan2(-pos.z, -pos.x);
         obj.patrolDirection = {
@@ -2003,6 +2988,68 @@ function animate() {
         const angle = Math.atan2(velocityZ, velocityX);
         obj.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), angle);
       }
+    }
+  });
+  
+  // ガードレールとドミノの自動復帰処理
+  gameObjects.forEach(obj => {
+    if ((obj.type === 'guardrail' || obj.type === 'domino') && obj.initialPosition && obj.initialQuaternion) {
+      handleObjectReturn(obj);
+    }
+  });
+  
+  // 新幹線の周回アニメーション（円形の地面の周囲を周回、各車両が独立して曲がる）
+  gameObjects.forEach(obj => {
+    if (obj.type === 'train' && obj.orbitAngle !== undefined && obj.orbitSpeed !== undefined) {
+      const trainY = 0.8; // 新幹線の高さ（線路上）
+      // 線路の半径（地面の半径より0.5単位外側）
+      const orbitRadius = SIZES.GROUND_RADIUS + 0.5; // 25.5
+      const totalLength = 2 * Math.PI * orbitRadius; // 円周の長さ
+      
+      // 角度を更新
+      obj.orbitAngle += obj.orbitSpeed;
+      
+      // 角度を0から2πの範囲に正規化
+      if (obj.orbitAngle >= Math.PI * 2) {
+        obj.orbitAngle -= Math.PI * 2;
+      }
+      
+      // 先頭車両の周回距離を計算
+      const headDistance = (obj.orbitAngle / (Math.PI * 2)) * totalLength;
+      
+      // パス上の位置と角度を計算する関数（円形のパス）
+      const getPositionOnPath = (distance: number): { x: number; z: number; angle: number } => {
+        // 距離を全周の長さで正規化
+        let normalizedDistance = distance % totalLength;
+        if (normalizedDistance < 0) normalizedDistance += totalLength;
+        
+        // 円周上の角度を計算（0から2πまで）
+        const angle = (normalizedDistance / totalLength) * Math.PI * 2;
+        
+        // 円周上の位置を計算
+        const x = orbitRadius * Math.cos(angle - Math.PI / 2); // -Math.PI/2を加えて上から開始
+        const z = orbitRadius * Math.sin(angle - Math.PI / 2);
+        
+        // 進行方向の角度（円の接線方向）
+        const directionAngle = angle + Math.PI / 2; // 接線方向
+        
+        return { x, z, angle: directionAngle };
+      };
+      
+      // 先頭車両の位置を計算
+      const headPos = getPositionOnPath(headDistance);
+      
+      // 車両の位置と角度を更新（1両のみ）
+      if (obj.mesh instanceof THREE.Group) {
+        const group = obj.mesh;
+        // グループ全体の位置と角度を更新
+        group.position.set(headPos.x, trainY, headPos.z);
+        group.rotation.y = headPos.angle;
+      }
+      
+      // 物理ボディの位置と角度を更新
+      obj.body.position.set(headPos.x, trainY, headPos.z);
+      obj.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), headPos.angle);
     }
   });
   
@@ -2036,34 +3083,54 @@ if (savedData) {
     const hasPenguin = gameState.objects.some(obj => obj.type === 'penguin');
     const hasCow = gameState.objects.some(obj => obj.type === 'cow');
     
+    // 保存されたデータを読み込む
+    deserializeGameState(gameState);
+    
     // 神社と山がない場合は追加
     if (!hasMountain || !hasShrine) {
-      initializeInitialObstacles();
-    } else {
-      // 保存されたデータを読み込む
-      deserializeGameState(gameState);
+      // 山と神社を追加（既存のオブジェクトは保持）
+      const mountainX = -8;
+      const mountainZ = -8;
+      const mountainHeight = 5;
+      const mountainRadius = 3;
+      const mountainY = 0;
       
-      // ペンギンと牛がない場合は追加
-      if (!hasPenguin || !hasCow) {
-        // ペンギンを3匹配置
-        if (!hasPenguin) {
-          for (let i = 0; i < 3; i++) {
-            const penguinX = (Math.random() - 0.5) * 20; // -10から10の範囲
-            const penguinZ = (Math.random() - 0.5) * 20; // -10から10の範囲
-            const penguin = createPenguin({ x: penguinX, y: 0.5, z: penguinZ });
-            gameObjects.push(penguin);
-          }
-        }
-        
-        // 牛を2頭配置
-        if (!hasCow) {
-          for (let i = 0; i < 2; i++) {
-            const cowX = (Math.random() - 0.5) * 20; // -10から10の範囲
-            const cowZ = (Math.random() - 0.5) * 20; // -10から10の範囲
-            const cow = createCow({ x: cowX, y: 0.5, z: cowZ });
-            gameObjects.push(cow);
-          }
-        }
+      if (!hasMountain) {
+        const mountain = createMountain(
+          { x: mountainX, y: mountainY, z: mountainZ },
+          mountainHeight,
+          mountainRadius
+        );
+        gameObjects.push(mountain);
+      }
+      
+      if (!hasShrine) {
+        const shrineX = mountainX;
+        const shrineY = mountainY + mountainHeight;
+        const shrineZ = mountainZ;
+        const shrine = createShrine({ x: shrineX, y: shrineY, z: shrineZ });
+        gameObjects.push(shrine);
+      }
+    }
+    
+    // ペンギンと牛がない場合は追加
+    if (!hasPenguin) {
+      // ペンギンを3匹配置
+      for (let i = 0; i < 3; i++) {
+        const penguinX = (Math.random() - 0.5) * 20; // -10から10の範囲
+        const penguinZ = (Math.random() - 0.5) * 20; // -10から10の範囲
+        const penguin = createPenguin({ x: penguinX, y: 0.5, z: penguinZ });
+        gameObjects.push(penguin);
+      }
+    }
+    
+    if (!hasCow) {
+      // 牛を10頭配置（牧草ゾーン付近に配置）
+      for (let i = 0; i < 10; i++) {
+        const cowX = PASTURE.CENTER_X + (Math.random() - 0.5) * 8; // 6から14の範囲
+        const cowZ = PASTURE.CENTER_Z + (Math.random() - 0.5) * 8; // 6から14の範囲
+        const cow = createCow({ x: cowX, y: 0.5, z: cowZ });
+        gameObjects.push(cow);
       }
     }
   } catch (error) {

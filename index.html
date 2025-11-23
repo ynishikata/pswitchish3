@@ -28,7 +28,9 @@
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             z-index: 100;
-            max-width: 300px;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
         }
         #ui-panel h1 {
             font-size: 20px;
@@ -36,19 +38,20 @@
             color: #333;
         }
         .button-group {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 10px;
         }
         button {
-            padding: 12px 20px;
-            font-size: 14px;
+            padding: 10px 15px;
+            font-size: 13px;
             border: none;
             border-radius: 5px;
             cursor: pointer;
             background: #4CAF50;
             color: white;
             transition: background 0.3s;
+            white-space: nowrap;
         }
         button:hover {
             background: #45a049;
@@ -81,6 +84,19 @@
             padding: 15px;
             background: #f0f0f0;
             border-radius: 5px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .speed-control > label:first-child {
+            grid-column: 1 / -1;
+        }
+        .speed-control > div:first-of-type {
+            grid-column: 1 / -1;
+        }
+        .speed-control-item {
+            display: flex;
+            flex-direction: column;
         }
         .speed-control label {
             display: block;
@@ -144,9 +160,12 @@
             <button id="add-seesaw">シーソーを追加</button>
             <button id="add-plank">板を追加</button>
             <button id="add-guardrail">ガードレールを追加</button>
-            <button id="clear-all" class="delete">すべてクリア</button>
+            <button id="add-shrine">神社を追加</button>
+            <button id="add-stairs">階段を追加</button>
+            <button id="clear-all" class="delete" style="grid-column: 1 / -1;">すべてクリア</button>
             <button id="reset-ball" class="secondary">ビー玉をリセット</button>
-            <hr style="margin: 15px 0; border: none; border-top: 1px solid #ddd;">
+            <button id="remove-ball" class="delete">ビー玉を消す</button>
+            <hr style="grid-column: 1 / -1; margin: 15px 0; border: none; border-top: 1px solid #ddd;">
             <button id="save-state" class="secondary">状態を保存</button>
             <button id="load-state" class="secondary">状態を読み込み</button>
             <button id="export-json" class="secondary">JSONにエクスポート</button>
@@ -161,21 +180,22 @@
                 <input type="number" id="ball-count" min="1" max="50" value="1" style="width: 100%; padding: 5px; font-size: 14px; border: 1px solid #ddd; border-radius: 3px;">
             </div>
             <label>ビー玉の初速</label>
-            <div style="margin-bottom: 10px;">
+            <div class="speed-control-item">
                 <label for="speed-x-slider" style="font-size: 12px;">X方向:</label>
                 <input type="range" id="speed-x-slider" min="-20" max="20" step="0.5" value="10">
                 <div class="speed-value" id="speed-x-value" style="font-size: 12px;">10.0</div>
             </div>
-            <div style="margin-bottom: 10px;">
+            <div class="speed-control-item">
                 <label for="speed-y-slider" style="font-size: 12px;">Y方向:</label>
                 <input type="range" id="speed-y-slider" min="-20" max="20" step="0.5" value="0">
                 <div class="speed-value" id="speed-y-value" style="font-size: 12px;">0.0</div>
             </div>
-            <div>
+            <div class="speed-control-item">
                 <label for="speed-z-slider" style="font-size: 12px;">Z方向:</label>
                 <input type="range" id="speed-z-slider" min="-20" max="20" step="0.5" value="0">
                 <div class="speed-value" id="speed-z-value" style="font-size: 12px;">0.0</div>
             </div>
+            <div></div>
         </div>
         <div class="info">
             <p><strong>操作:</strong></p>
