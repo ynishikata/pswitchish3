@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,15 +11,18 @@
             padding: 0;
             box-sizing: border-box;
         }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
             background: #1a1a1a;
         }
+
         #canvas-container {
             width: 100vw;
             height: 100vh;
         }
+
         #ui-panel {
             position: absolute;
             top: 20px;
@@ -32,16 +36,19 @@
             max-height: 90vh;
             overflow-y: auto;
         }
+
         #ui-panel h1 {
             font-size: 20px;
             margin-bottom: 15px;
             color: #333;
         }
+
         .button-group {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
         }
+
         button {
             padding: 10px 15px;
             font-size: 13px;
@@ -53,24 +60,31 @@
             transition: background 0.3s;
             white-space: nowrap;
         }
+
         button:hover {
             background: #45a049;
         }
+
         button:active {
             transform: scale(0.98);
         }
+
         button.delete {
             background: #f44336;
         }
+
         button.delete:hover {
             background: #da190b;
         }
+
         button.secondary {
             background: #2196F3;
         }
+
         button.secondary:hover {
             background: #0b7dda;
         }
+
         .info {
             margin-top: 15px;
             padding: 10px;
@@ -79,6 +93,7 @@
             font-size: 12px;
             color: #666;
         }
+
         .speed-control {
             margin-top: 15px;
             padding: 15px;
@@ -88,16 +103,20 @@
             grid-template-columns: 1fr 1fr;
             gap: 15px;
         }
-        .speed-control > label:first-child {
+
+        .speed-control>label:first-child {
             grid-column: 1 / -1;
         }
-        .speed-control > div:first-of-type {
+
+        .speed-control>div:first-of-type {
             grid-column: 1 / -1;
         }
+
         .speed-control-item {
             display: flex;
             flex-direction: column;
         }
+
         .speed-control label {
             display: block;
             margin-bottom: 8px;
@@ -105,16 +124,19 @@
             font-weight: bold;
             color: #333;
         }
+
         .speed-control input[type="range"] {
             width: 100%;
             margin-bottom: 5px;
         }
+
         .speed-control .speed-value {
             font-size: 14px;
             color: #2196F3;
             font-weight: bold;
             text-align: center;
         }
+
         #coordinates {
             position: absolute;
             top: 20px;
@@ -128,16 +150,19 @@
             z-index: 100;
             min-width: 200px;
         }
+
         #coordinates .coord-label {
             color: #aaa;
             margin-right: 5px;
         }
+
         #coordinates .coord-value {
             color: #fff;
             font-weight: bold;
         }
     </style>
 </head>
+
 <body>
     <div id="canvas-container"></div>
     <div id="coordinates">
@@ -161,6 +186,7 @@
             <button id="add-plank">板を追加</button>
             <button id="add-guardrail">ガードレールを追加</button>
             <button id="add-shrine">神社を追加</button>
+            <button id="add-fan">扇風機を追加</button>
             <button id="add-stairs">階段を追加</button>
             <button id="add-trampoline" style="background: #ff69b4;">トランポリンを追加</button>
             <button id="add-goal" style="background: #ffd700; color: #333;">ゴールを追加</button>
@@ -179,7 +205,8 @@
         <div class="speed-control">
             <label>ビー玉の数</label>
             <div style="margin-bottom: 15px;">
-                <input type="number" id="ball-count" min="1" max="50" value="1" style="width: 100%; padding: 5px; font-size: 14px; border: 1px solid #ddd; border-radius: 3px;">
+                <input type="number" id="ball-count" min="1" max="50" value="1"
+                    style="width: 100%; padding: 5px; font-size: 14px; border: 1px solid #ddd; border-radius: 3px;">
             </div>
             <label>ビー玉の初速</label>
             <div class="speed-control-item">
@@ -210,5 +237,5 @@
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>
-</html>
 
+</html>
